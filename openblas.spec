@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.2.14
-Release  : 11
+Release  : 12
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.14.tar.gz
 Summary  : The OpenBLAS linear algebra package
