@@ -1,0 +1,29 @@
+--- OpenBLAS-0.2.15/Makefile.system~	2015-10-27 16:44:50.000000000 -0400
++++ OpenBLAS-0.2.15/Makefile.system	2016-01-18 21:54:40.344083997 -0500
+@@ -193,10 +193,10 @@
+ 
+ ARFLAGS	=
+ CPP	= $(COMPILER) -E
+-AR	= $(CROSS_SUFFIX)ar
++AR	= $(CROSS_SUFFIX)gcc-ar
+ AS	= $(CROSS_SUFFIX)as
+ LD	= $(CROSS_SUFFIX)ld
+-RANLIB	= $(CROSS_SUFFIX)ranlib
++RANLIB	= $(CROSS_SUFFIX)gcc-ranlib
+ NM	= $(CROSS_SUFFIX)nm
+ DLLWRAP = $(CROSS_SUFFIX)dllwrap
+ OBJCOPY = $(CROSS_SUFFIX)objcopy
+--- OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran~	2015-10-27 16:44:50.000000000 -0400
++++ OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran	2016-01-18 21:57:05.438270070 -0500
+@@ -52,9 +52,9 @@
+ #  The archiver and the flag(s) to use when building archive (library)
+ #  If you system has no ranlib, set RANLIB = echo.
+ #
+-ARCH     = ar
++ARCH     = gcc-ar
+ ARCHFLAGS= cr
+-RANLIB   = ranlib
++RANLIB   = gcc-ranlib
+ #
+ #  Location of the extended-precision BLAS (XBLAS) Fortran library
+ #  used for building and testing extended-precision routines.  The
