@@ -66,13 +66,13 @@ pushd ..
 	popd
 popd
 
-%check
-pushd ..
-
-	pushd openblas-noavx
-	make -C test all
-	popd
-popd
+#check
+#pushd ..
+#
+#	pushd openblas-noavx
+#	make -C test all
+#	popd
+#popd
 
 %files
 %defattr(-,root,root,-)
