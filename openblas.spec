@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.2.15
-Release  : 13
+Release  : 14
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.15.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -95,3 +95,5 @@ popd
 /usr/lib64/libopenblas_sandybridgep-r0.2.15.so
 /usr/lib64/avx2/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
+/usr/lib64/avx2/cmake/openblas/OpenBLASConfigVersion.cmake
+/usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
