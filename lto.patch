@@ -27,3 +27,14 @@
  #
  #  Location of the extended-precision BLAS (XBLAS) Fortran library
  #  used for building and testing extended-precision routines.  The
+--- OpenBLAS-0.2.15/Makefile.system~	2016-01-18 21:54:40.000000000 -0500
++++ OpenBLAS-0.2.15/Makefile.system	2016-02-16 11:38:26.214013656 -0500
+@@ -226,7 +226,7 @@
+ endif
+ 
+ ifeq ($(OSNAME), Linux)
+-EXTRALIB	+= -lm
++EXTRALIB	+= -lm -lgfortran
+ NO_EXPRECISION = 1
+ endif
+ 
