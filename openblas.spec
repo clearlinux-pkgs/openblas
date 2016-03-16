@@ -1,8 +1,8 @@
 Name     : openblas
-Version  : 0.2.15
-Release  : 15
+Version  : 0.2.16
+Release  : 16
 URL      : http://www.openblas.net/
-Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.15.tar.gz
+Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.16.tar.gz
 Summary  : The OpenBLAS linear algebra package
 Group    : Development/Tools
 License  : BSD-3-Clause
@@ -29,6 +29,7 @@ OpenBLAS is an optimized linear algebra library.
 export AR=gcc-ar
 export RANLIB=gcc-ranlib
 export CFLAGS="$CFLAGS -flto -fno-semantic-interposition -O3 "
+export FFLAGS="$CFLAGS -flto -fno-semantic-interposition -O3 "
 export CXXFLAGS="$CXXFLAGS -flto -fno-semantic-interposition -O3 "
 
 sed -i -e "s/\-O2/\-O3/g" Makefile*
@@ -86,13 +87,13 @@ popd
 /usr/lib64/avx2/libopenblas.a
 /usr/lib64/avx2/libopenblas.so
 /usr/lib64/avx2/libopenblas.so.0
-/usr/lib64/avx2/libopenblas_haswellp-r0.2.15.a
-/usr/lib64/avx2/libopenblas_haswellp-r0.2.15.so
+/usr/lib64/avx2/libopenblas_haswellp-r0.2.16.a
+/usr/lib64/avx2/libopenblas_haswellp-r0.2.16.so
 /usr/lib64/libopenblas.a
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
-/usr/lib64/libopenblas_sandybridgep-r0.2.15.a
-/usr/lib64/libopenblas_sandybridgep-r0.2.15.so
+/usr/lib64/libopenblas_sandybridgep-r0.2.16.a
+/usr/lib64/libopenblas_sandybridgep-r0.2.16.so
 /usr/lib64/avx2/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/avx2/cmake/openblas/OpenBLASConfigVersion.cmake
