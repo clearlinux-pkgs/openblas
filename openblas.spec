@@ -1,5 +1,5 @@
 Name     : openblas
-Version  : 0.2.16
+Version  : 0.2.17
 Release  : 18
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.16.tar.gz
@@ -39,12 +39,12 @@ pushd ..
 	cp -a OpenBLAS-%{version} openblas-avx2
 
 	pushd openblas-noavx
-	make TARGET=SANDYBRIDGE SHARED=1 DYNAMIC_THREADS=1 NUM_THREADS=44 %{?_smp_mflags} 
+	make TARGET=SANDYBRIDGE F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NUM_THREADS=44 %{?_smp_mflags} 
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	export FFLAGS="$FFLAGS -march=haswell -O3 "
 	pushd openblas-avx2
-	make TARGET=HASWELL SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=44 %{?_smp_mflags} 
+	make TARGET=HASWELLE F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=44 %{?_smp_mflags} 
 	popd
 popd
 
