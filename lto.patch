@@ -38,3 +38,14 @@
  NO_EXPRECISION = 1
  endif
  
+--- OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran~	2016-01-18 21:57:05.000000000 -0500
++++ OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran	2016-03-19 13:34:13.265646623 -0400
+@@ -13,7 +13,7 @@
+ #  desired load options for your machine.
+ #
+ FORTRAN  = gfortran 
+-OPTS     = -O2 -frecursive
++OPTS     = -O3 -march=sandybridge -frecursive
+ DRVOPTS  = $(OPTS)
+ NOOPT    = -O0 -frecursive
+ LOADER   = gfortran

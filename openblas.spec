@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.2.16
-Release  : 16
+Release  : 17
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.16.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -29,7 +29,7 @@ OpenBLAS is an optimized linear algebra library.
 export AR=gcc-ar
 export RANLIB=gcc-ranlib
 export CFLAGS="$CFLAGS -flto -fno-semantic-interposition -O3 "
-export FFLAGS="$CFLAGS -flto -fno-semantic-interposition -O3 "
+export FFLAGS="$CFLAGS -flto -fno-semantic-interposition -O3 -ff2c "
 export CXXFLAGS="$CXXFLAGS -flto -fno-semantic-interposition -O3 "
 
 sed -i -e "s/\-O2/\-O3/g" Makefile*
