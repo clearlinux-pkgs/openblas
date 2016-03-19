@@ -49,3 +49,19 @@
  DRVOPTS  = $(OPTS)
  NOOPT    = -O0 -frecursive
  LOADER   = gfortran
+--- OpenBLAS-0.2.16/Makefile.system~	2016-03-19 16:48:04.000000000 -0400
++++ OpenBLAS-0.2.16/Makefile.system	2016-03-19 16:49:00.368537731 -0400
+@@ -984,11 +984,11 @@
+ endif
+ 
+ ifndef COMMON_OPT
+-COMMON_OPT = -O2
++COMMON_OPT = -O3
+ endif
+ 
+ ifndef FCOMMON_OPT
+-FCOMMON_OPT = -O2 -frecursive
++FCOMMON_OPT = -O3 -frecursive
+ endif
+ 
+ 
