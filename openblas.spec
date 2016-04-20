@@ -44,7 +44,7 @@ pushd ..
 	export CFLAGS="$CFLAGS -march=haswell "
 	export FFLAGS="$FFLAGS -march=haswell -O3 "
 	pushd openblas-avx2
-	make TARGET=HASWELLE F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=128 %{?_smp_mflags} 
+	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=128 %{?_smp_mflags} 
 	popd
 popd
 
