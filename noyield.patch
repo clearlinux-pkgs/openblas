@@ -1,0 +1,11 @@
+--- OpenBLAS-0.2.16/common.h~	2016-03-15 18:49:10.000000000 +0000
++++ OpenBLAS-0.2.16/common.h	2016-06-12 16:12:41.864694505 +0000
+@@ -349,7 +349,7 @@
+ */
+ 
+ #ifndef YIELDING
+-#define YIELDING	sched_yield()
++#define YIELDING	__asm__ __volatile__ ("rep nop\n");
+ #endif
+ 
+ /***
