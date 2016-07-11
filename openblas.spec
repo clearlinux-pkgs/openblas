@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.2.16
-Release  : 26
+Release  : 27
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.16.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -46,7 +46,7 @@ pushd ..
 	export CFLAGS="$CFLAGS -march=haswell "
 	export FFLAGS="$FFLAGS -march=haswell -O3 "
 	pushd openblas-avx2
-	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=128 %{?_smp_mflags} 
+	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1  NUM_THREADS=128 %{?_smp_mflags} 
 	popd
 popd
 
