@@ -1,0 +1,31 @@
+Patch from https://github.com/xianyi/OpenBLAS/issues/923
+
+--- OpenBLAS-0.2.16/interface/gemm.c.org	2016-07-14 20:45:16.904484202 +0000
++++ OpenBLAS-0.2.16/interface/gemm.c	2016-07-14 20:46:08.207969856 +0000
+@@ -409,22 +409,10 @@
+   nthreads_max = num_cpu_avail(3);
+   nthreads_avail = nthreads_max;
+ 
+-#ifndef COMPLEX
+-  MNK = (double) args.m * (double) args.n * (double) args.k;
+-  if ( MNK <= (65536.0  * (double) GEMM_MULTITHREAD_THRESHOLD)  )
+-	nthreads_max = 1;
+-#else
+-  MNK = (double) args.m * (double) args.n * (double) args.k;
+-  if ( MNK <= (8192.0  * (double) GEMM_MULTITHREAD_THRESHOLD)  )
+-	nthreads_max = 1;
+-#endif
+-  args.common = NULL;
+-
+-  if ( nthreads_max > nthreads_avail )
+-  	args.nthreads = nthreads_avail;
+-  else
+-  	args.nthreads = nthreads_max;
+-
++  MNK=(double)args.m*(double)args.n+(double)args.m*(double)args.k+(double)args.n*(double)args.k;
++  int hint=sizeof(BLAS_REAL)*MNK/L2_SIZE;
++  args.nthreads=MIN(nthreads_max,MAX(1,hint));
++  //printf("%d++ versus hint %d",args.nthreads, hint);
+ 
+  if (args.nthreads == 1) {
+ #endif
