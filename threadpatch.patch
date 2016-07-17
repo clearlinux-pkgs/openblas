@@ -23,7 +23,7 @@ Patch from https://github.com/xianyi/OpenBLAS/issues/923
 -  	args.nthreads = nthreads_max;
 -
 +  MNK=(double)args.m*(double)args.n+(double)args.m*(double)args.k+(double)args.n*(double)args.k;
-+  int hint=sizeof(BLAS_REAL)*MNK/L2_SIZE;
++  int hint=sizeof(BLAS_REAL)*MNK/L2_SIZE + 1;
 +  args.nthreads=MIN(nthreads_max,MAX(1,hint));
 +  //printf("%d++ versus hint %d",args.nthreads, hint);
  
