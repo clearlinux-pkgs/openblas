@@ -56,3 +56,18 @@
  SGEMMOTCOPY    =  ../generic/gemm_tcopy_4.c
  SGEMMINCOPYOBJ =  sgemm_incopy$(TSUFFIX).$(SUFFIX)
  SGEMMITCOPYOBJ =  sgemm_itcopy$(TSUFFIX).$(SUFFIX)
+--- OpenBLAS-0.2.16/kernel/generic/gemm_ncopy_1.c.org2	2016-07-23 14:21:38.255498433 +0000
++++ OpenBLAS-0.2.16/kernel/generic/gemm_ncopy_1.c	2016-07-23 14:23:44.907981467 +0000
+@@ -43,6 +43,12 @@
+   BLASLONG i, j;
+   FLOAT *a_offset, *a_offset1;
+   FLOAT *b_offset;
++  
++  /* typical case of width == stride, this whole function is just a memcpy */
++  if (lda == m) {
++    memcpy(b, a, m * n * sizeof(FLOAT));
++    return;
++  }
+ 
+   a_offset = a;
+   b_offset = b;
