@@ -1,8 +1,8 @@
 Name     : openblas
-Version  : 0.2.16
+Version  : 0.2.19
 Release  : 36
 URL      : http://www.openblas.net/
-Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.16.tar.gz
+Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.19.tar.gz
 Summary  : The OpenBLAS linear algebra package
 Group    : Development/Tools
 License  : BSD-3-Clause
@@ -46,7 +46,7 @@ pushd ..
 	cp -a OpenBLAS-%{version} openblas-avx2
 
 	pushd openblas-noavx
-	make TARGET=SANDYBRIDGE F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NUM_THREADS=128 %{?_smp_mflags} 
+	make TARGET=SANDYBRIDGE F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NUM_THREADS=256 %{?_smp_mflags} 
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	export FFLAGS="$FFLAGS -march=haswell -O3 "
@@ -94,13 +94,13 @@ popd
 /usr/lib64/avx2/libopenblas.a
 /usr/lib64/avx2/libopenblas.so
 /usr/lib64/avx2/libopenblas.so.0
-/usr/lib64/avx2/libopenblas_haswellp-r0.2.16.a
-/usr/lib64/avx2/libopenblas_haswellp-r0.2.16.so
+/usr/lib64/avx2/libopenblas_haswellp-r0.2.19.a
+/usr/lib64/avx2/libopenblas_haswellp-r0.2.19.so
 /usr/lib64/libopenblas.a
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
-/usr/lib64/libopenblas_sandybridgep-r0.2.16.a
-/usr/lib64/libopenblas_sandybridgep-r0.2.16.so
+/usr/lib64/libopenblas_sandybridgep-r0.2.19.a
+/usr/lib64/libopenblas_sandybridgep-r0.2.19.so
 /usr/lib64/avx2/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/avx2/cmake/openblas/OpenBLASConfigVersion.cmake
