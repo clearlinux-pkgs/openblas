@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.2.19
-Release  : 36
+Release  : 37
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.19.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -12,6 +12,13 @@ Patch2: noyield.patch
 Patch3: threadpatch.patch
 Patch4: oncopy.patch
 Patch5: matrixsize.patch
+
+%package staticdev
+Summary: fiiles for static linking
+Group: Binaries
+
+%description staticdev
+files for static linking
 
 #
 # Note that this package currently does not have a -dev component.
@@ -91,17 +98,19 @@ popd
 /usr/include/lapacke_mangling.h
 /usr/include/lapacke_utils.h
 /usr/include/openblas_config.h
-/usr/lib64/avx2/libopenblas.a
 /usr/lib64/avx2/libopenblas.so
 /usr/lib64/avx2/libopenblas.so.0
-/usr/lib64/avx2/libopenblas_haswellp-r0.2.19.a
 /usr/lib64/avx2/libopenblas_haswellp-r0.2.19.so
-/usr/lib64/libopenblas.a
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
-/usr/lib64/libopenblas_sandybridgep-r0.2.19.a
 /usr/lib64/libopenblas_sandybridgep-r0.2.19.so
 /usr/lib64/avx2/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/avx2/cmake/openblas/OpenBLASConfigVersion.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
+
+%files staticdev
+/usr/lib64/avx2/libopenblas.a
+/usr/lib64/avx2/libopenblas_haswellp-r0.2.19.a
+/usr/lib64/libopenblas.a
+/usr/lib64/libopenblas_sandybridgep-r0.2.19.a
