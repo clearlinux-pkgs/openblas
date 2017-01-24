@@ -1,0 +1,537 @@
+commit 84b8170bfbc954154d3cb34af473801b59c5e28a
+Author: jiahaipeng <jiahaipeng95@gmail.com>
+Date:   Sun Dec 11 09:09:50 2016 +0000
+
+    Adding multi-threading for copy, dot, rot, and asum funcitons
+
+diff --git a/interface/asum.c b/interface/asum.c
+index 13939894..e6fcf4de 100644
+--- a/interface/asum.c
++++ b/interface/asum.c
+@@ -42,6 +42,24 @@
+ #include "functable.h"
+ #endif
+ 
++#ifdef SMP
++static int asum_threads (BLASLONG m, BLASLONG n, BLASLONG k, float alpha,
++	       float* x, BLASLONG incx, float* y, BLASLONG incy, float* z, BLASLONG incz)
++{
++#ifndef CBLAS
++  FLOATRET ret;
++  ret = (FLOATRET)ASUM_K(m, x, incx);
++  *((double *)z) = (double)ret;
++#else
++  FLOAT ret;
++  ret = ASUM_K(m, x, incx);
++  *((double *)z) = (double)ret;
++#endif
++
++  return 0;
++}
++#endif
++
+ #ifndef CBLAS
+ 
+ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX){
+@@ -52,14 +70,62 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX){
+ 
+   PRINT_DEBUG_NAME;
+ 
++#ifdef SMP
++  int i;
++  int mode, nthreads;
++  double mid_result= 0.0;
++  FLOAT dummyalpha[2] = {ZERO, ZERO};
++  double *buffer = (double*)blas_memory_alloc(0);
++#endif
++
+   if (n <= 0) return 0;
+ 
+   IDEBUG_START;
+ 
+   FUNCTION_PROFILE_START();
+ 
++#ifdef SMP
++  nthreads = num_cpu_avail(1);
++
++  //Temporarily work-around the low performance issue with small imput size &
++  //multithreads.
++  if (n <= 100000)
++	  nthreads = 1;
++
++  if (nthreads == 1) {
++#endif
++
+   ret = (FLOATRET)ASUM_K(n, x, incx);
+ 
++#ifdef SMP
++  } else {
++
++#ifndef DOUBLE 
++#ifndef COMPLEX
++    mode  =  BLAS_SINGLE | BLAS_REAL;
++#else
++    mode  =  BLAS_SINGLE | BLAS_COMPLEX;
++#endif
++#else
++#ifndef COMPLEX
++    mode  =  BLAS_DOUBLE | BLAS_REAL;
++#else
++    mode  =  BLAS_DOUBLE | BLAS_COMPLEX;
++#endif
++#endif
++
++    blas_level1_thread_with_return_value(mode, n, 0, 0, dummyalpha,
++		       x, incx, NULL, 0, buffer, 0, (void *)asum_threads, nthreads);
++
++    for(i = 0; i < nthreads; i++)
++        mid_result += buffer[2*i];
++    
++    ret = (FLOATRET)mid_result;
++  }
++
++ blas_memory_free(buffer);
++#endif
++
+   FUNCTION_PROFILE_END(COMPSIZE, n, n);
+ 
+   IDEBUG_END;
+@@ -75,18 +141,68 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx){
+ 
+   PRINT_DEBUG_CNAME;
+ 
++#ifdef SMP
++  int i;
++  int mode, nthreads;
++  double mid_result= 0.0;
++  FLOAT dummyalpha[2] = {ZERO, ZERO};
++
++  double *buffer = (double*)blas_memory_alloc(0);
++#endif
++
+   if (n <= 0) return 0;
+ 
+   IDEBUG_START;
+ 
+   FUNCTION_PROFILE_START();
+ 
++#ifdef SMP
++  nthreads = num_cpu_avail(1);
++
++  //Temporarily work-around the low performance issue with small imput size &
++  //multithreads.
++  if (n <= 100000)
++	  nthreads = 1;
++
++  if (nthreads == 1) {
++#endif
++
+   ret = ASUM_K(n, x, incx);
+ 
++#ifdef SMP
++  } else {
++
++#ifndef DOUBLE 
++#ifndef COMPLEX
++    mode  =  BLAS_SINGLE | BLAS_REAL;
++#else
++    mode  =  BLAS_SINGLE | BLAS_COMPLEX;
++#endif
++#else
++#ifndef COMPLEX
++    mode  =  BLAS_DOUBLE | BLAS_REAL;
++#else
++    mode  =  BLAS_DOUBLE | BLAS_COMPLEX;
++#endif
++#endif
++
++    blas_level1_thread_with_return_value(mode, n, 0, 0, dummyalpha,
++		       x, incx, NULL, 0, buffer, 0, (void *)asum_threads, nthreads);
++
++    for(i = 0; i < nthreads; i++)
++        mid_result += buffer[2*i];
++    
++    ret = (FLOAT)mid_result;
++  }
++
++ blas_memory_free(buffer);
++#endif
++
+   FUNCTION_PROFILE_END(COMPSIZE, n, n);
+ 
+   IDEBUG_END;
+ 
++
+   return ret;
+ }
+ 
+diff --git a/interface/copy.c b/interface/copy.c
+index 3fb2182a..7452c58b 100644
+--- a/interface/copy.c
++++ b/interface/copy.c
+@@ -42,6 +42,17 @@
+ #include "functable.h"
+ #endif
+ 
++#ifdef SMP
++
++static int copy_threads (BLASLONG m, BLASLONG n, BLASLONG k, float alpha,
++	       float* x, BLASLONG incx, float* y, BLASLONG incy, float* z, BLASLONG incz)
++{
++    COPY_K(m, x, incx, y, incy);
++    return 0;
++}
++
++#endif
++
+ #ifndef CBLAS
+ 
+ void NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY){
+@@ -60,6 +71,11 @@ void CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+ 
+ #endif
+ 
++#ifdef SMP
++  int mode, nthreads;
++  FLOAT dummyalpha[2] = {ZERO, ZERO};
++#endif
++
+   if (n <= 0) return;
+ 
+   IDEBUG_START;
+@@ -69,8 +85,42 @@ void CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+   if (incx < 0) x -= (n - 1) * incx * COMPSIZE;
+   if (incy < 0) y -= (n - 1) * incy * COMPSIZE;
+ 
++#ifdef SMP
++  nthreads = num_cpu_avail(1);
++
++  //Temporarily work-around the low performance issue with small imput size &
++  //multithreads.
++  if (n <= 100000)
++	  nthreads = 1;
++
++  if (nthreads == 1) {
++#endif
++
+   COPY_K(n, x, incx, y, incy);
+ 
++#ifdef SMP
++  } else {
++
++#ifndef DOUBLE 
++#ifndef COMPLEX
++    mode  =  BLAS_SINGLE | BLAS_REAL;
++#else
++    mode  =  BLAS_SINGLE | BLAS_COMPLEX;
++#endif
++#else
++#ifndef COMPLEX
++    mode  =  BLAS_DOUBLE | BLAS_REAL;
++#else
++    mode  =  BLAS_DOUBLE | BLAS_COMPLEX;
++#endif
++#endif
++
++    blas_level1_thread(mode, n, 0, 0, dummyalpha,
++		       x, incx, y, incy, NULL, 0, (void *)copy_threads, nthreads);
++
++  }
++#endif
++
+   FUNCTION_PROFILE_END(COMPSIZE, COMPSIZE * n, 0);
+ 
+   IDEBUG_END;
+diff --git a/interface/dot.c b/interface/dot.c
+index 3a918405..1ef9b342 100644
+--- a/interface/dot.c
++++ b/interface/dot.c
+@@ -42,6 +42,24 @@
+ #include "functable.h"
+ #endif
+ 
++#ifdef SMP
++static int dot_threads (BLASLONG m, BLASLONG n, BLASLONG k, float alpha,
++	       float* x, BLASLONG incx, float* y, BLASLONG incy, float* z, BLASLONG incz)
++{
++#ifndef CBLAS
++  FLOATRET ret;
++  ret = (FLOATRET)DOTU_K(m, x, incx, y, incy);
++  *((double *)z) = (double)ret;
++#else
++  FLOAT ret;
++  ret = DOTU_K(n, x, incx, y, incy);
++  *((double *)z) = (double)ret;
++#endif
++
++  return 0;
++}
++#endif
++
+ #ifndef CBLAS
+ 
+ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY){
+@@ -53,6 +71,14 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY){
+ 
+   PRINT_DEBUG_NAME;
+ 
++#ifdef SMP
++  int i;
++  int mode, nthreads;
++  double mid_result= 0.0;
++  FLOAT dummyalpha[2] = {ZERO, ZERO};
++  double *buffer = (double*)blas_memory_alloc(0);
++#endif
++
+   if (n <= 0) return 0.;
+ 
+   IDEBUG_START;
+@@ -62,8 +88,40 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY){
+   if (incx < 0) x -= (n - 1) * incx;
+   if (incy < 0) y -= (n - 1) * incy;
+ 
++#ifdef SMP
++  nthreads = num_cpu_avail(1);
++
++  //Temporarily work-around the low performance issue with small imput size &
++  //multithreads.
++  if (n <= 100000)
++	  nthreads = 1;
++
++  if (nthreads == 1) {
++#endif
++
+   ret = (FLOATRET)DOTU_K(n, x, incx, y, incy);
+ 
++#ifdef SMP
++  } else {
++
++#ifndef DOUBLE 
++    mode  =  BLAS_SINGLE | BLAS_REAL;
++#else
++    mode  =  BLAS_DOUBLE | BLAS_REAL;
++#endif
++
++    blas_level1_thread_with_return_value(mode, n, 0, 0, dummyalpha,
++		       x, incx, y, incy, buffer, 0, (void *)dot_threads, nthreads);
++
++    for(i = 0; i < nthreads; i++)
++        mid_result += buffer[2*i];
++    
++    ret = (FLOATRET)mid_result;
++  }
++
++ blas_memory_free(buffer);
++#endif
++
+   FUNCTION_PROFILE_END(1, 2 * n, 2 * n);
+ 
+   IDEBUG_END;
+@@ -79,6 +137,14 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+ 
+   PRINT_DEBUG_CNAME;
+ 
++#ifdef SMP
++  int i;
++  int mode, nthreads;
++  double mid_result= 0.0;
++  FLOAT dummyalpha[2] = {ZERO, ZERO};
++
++  double *buffer = (double*)blas_memory_alloc(0);
++#endif
+   if (n <= 0) return 0.;
+ 
+   IDEBUG_START;
+@@ -88,8 +154,39 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+   if (incx < 0) x -= (n - 1) * incx;
+   if (incy < 0) y -= (n - 1) * incy;
+ 
++#ifdef SMP
++  nthreads = num_cpu_avail(1);
++
++  //Temporarily work-around the low performance issue with small imput size &
++  //multithreads.
++  if (n <= 100000)
++	  nthreads = 1;
++
++  if (nthreads == 1) {
++#endif
+   ret = DOTU_K(n, x, incx, y, incy);
+ 
++#ifdef SMP
++  } else {
++
++#ifndef DOUBLE 
++    mode  =  BLAS_SINGLE | BLAS_REAL;
++#else
++    mode  =  BLAS_DOUBLE | BLAS_REAL;
++#endif
++
++    blas_level1_thread_with_return_value(mode, n, 0, 0, dummyalpha,
++		       x, incx, y, incy, buffer, 0, (void *)dot_threads, nthreads);
++
++    for(i = 0; i < nthreads; i++)
++        mid_result += buffer[2*i];
++    
++    ret = (FLOAT)mid_result;
++  }
++
++ blas_memory_free(buffer);
++#endif
++
+   FUNCTION_PROFILE_END(1, 2 * n, 2 * n);
+ 
+   IDEBUG_END;
+diff --git a/interface/rot.c b/interface/rot.c
+index 125275a1..ae6b49ca 100644
+--- a/interface/rot.c
++++ b/interface/rot.c
+@@ -42,6 +42,16 @@
+ #include "functable.h"
+ #endif
+ 
++#ifdef SMP 
++static int rot_threads (BLASLONG m, BLASLONG n, BLASLONG k, float alpha,
++	       float* x, BLASLONG incx, float* y, BLASLONG incy, float* z, BLASLONG incz)
++{
++    ROT_K(m, x, incx, y, incy, n, k);
++    return 0;
++}
++
++#endif
++
+ #ifndef CBLAS
+ 
+ void NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY, FLOAT *C, FLOAT *S){
+@@ -62,6 +72,11 @@ void CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy, FLOAT c, F
+ 
+ #endif
+ 
++#ifdef SMP
++  int mode, nthreads;
++  FLOAT dummyalpha[2] = {ZERO, ZERO};
++#endif
++
+   if (n <= 0) return;
+ 
+   IDEBUG_START;
+@@ -71,8 +86,34 @@ void CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy, FLOAT c, F
+   if (incx < 0) x -= (n - 1) * incx;
+   if (incy < 0) y -= (n - 1) * incy;
+ 
++#ifdef SMP
++  nthreads = num_cpu_avail(1);
++
++  //Temporarily work-around the low performance issue with small imput size &
++  //multithreads.
++  if (n <= 100000)
++	  nthreads = 1;
++
++  if (nthreads == 1) {
++#endif
++
+   ROT_K(n, x, incx, y, incy, c, s);
+ 
++#ifdef SMP
++  } else {
++
++#ifndef DOUBLE 
++    mode  =  BLAS_SINGLE | BLAS_REAL;
++#else
++    mode  =  BLAS_DOUBLE | BLAS_REAL;
++#endif
++
++    blas_level1_thread(mode, n, c, s, dummyalpha,
++		       x, incx, y, incy, NULL, 0, (void *)rot_threads, nthreads);
++
++  }
++#endif
++
+   FUNCTION_PROFILE_END(1, n, n);
+ 
+   IDEBUG_END;
+commit 1aa1e6cb54ced625915bc7b8be59ae3f55f369e6
+Author: jiahaipeng <jiahaipeng95@gmail.com>
+Date:   Sun Dec 11 09:02:18 2016 +0000
+
+    modify the blas_l1_thread.c for support multi-threded for L1 fuction with return value
+
+diff --git a/driver/others/blas_l1_thread.c b/driver/others/blas_l1_thread.c
+index 83fc2688..e405c746 100644
+--- a/driver/others/blas_l1_thread.c
++++ b/driver/others/blas_l1_thread.c
+@@ -110,3 +110,74 @@ int blas_level1_thread(int mode, BLASLONG m, BLASLONG n, BLASLONG k, void *alpha
+ 
+   return 0;
+ }
++
++int blas_level1_thread_with_return_value(int mode, BLASLONG m, BLASLONG n, BLASLONG k, void *alpha,
++		       void *a, BLASLONG lda,
++		       void *b, BLASLONG ldb,
++		       void *c, BLASLONG ldc, int (*function)(), int nthreads){
++
++  blas_queue_t queue[MAX_CPU_NUMBER];
++  blas_arg_t   args [MAX_CPU_NUMBER];
++
++  BLASLONG i, width, astride, bstride;
++  int num_cpu, calc_type;
++
++  calc_type = (mode & BLAS_PREC) + ((mode & BLAS_COMPLEX) != 0) + 2;
++
++  mode |= BLAS_LEGACY;
++
++  for (i = 0; i < nthreads; i++) blas_queue_init(&queue[i]);
++
++  num_cpu = 0;
++  i = m;
++
++  while (i > 0){
++
++    /* Adjust Parameters */
++    width  = blas_quickdivide(i + nthreads - num_cpu - 1,
++			      nthreads - num_cpu);
++
++    i -= width;
++    if (i < 0) width = width + i;
++
++    astride = width * lda;
++
++    if (!(mode & BLAS_TRANSB_T)) {
++      bstride = width * ldb;
++    } else {
++      bstride = width;
++    }
++
++    astride <<= calc_type;
++    bstride <<= calc_type;
++
++    args[num_cpu].m = width;
++    args[num_cpu].n = n;
++    args[num_cpu].k = k;
++    args[num_cpu].a = (void *)a;
++    args[num_cpu].b = (void *)b;
++    args[num_cpu].c = (void *)((char *)c + num_cpu * sizeof(double)*2);
++    args[num_cpu].lda = lda;
++    args[num_cpu].ldb = ldb;
++    args[num_cpu].ldc = ldc;
++    args[num_cpu].alpha = alpha;
++
++    queue[num_cpu].mode    = mode;
++    queue[num_cpu].routine = function;
++    queue[num_cpu].args    = &args[num_cpu];
++    queue[num_cpu].next    = &queue[num_cpu + 1];
++
++    a = (void *)((BLASULONG)a + astride);
++    b = (void *)((BLASULONG)b + bstride);
++
++    num_cpu ++;
++  }
++
++  if (num_cpu) {
++    queue[num_cpu - 1].next = NULL;
++
++    exec_blas(num_cpu, queue);
++  }
++
++  return 0;
++}
