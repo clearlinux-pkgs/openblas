@@ -1,0 +1,193 @@
+From bd0f95b8c2f051c525e441d4e6f464e813058702 Mon Sep 17 00:00:00 2001
+From: Icarus Sparry <icarus.w.sparry@intel.com>
+Date: Wed, 12 Apr 2017 17:40:14 -0700
+Subject: [PATCH] Fix memory leaks
+
+Signed-off-by: Icarus Sparry <icarus.w.sparry@intel.com>
+---
+ interface/asum.c | 19 ++++++++-----------
+ interface/copy.c |  2 +-
+ interface/dot.c  | 18 ++++++++----------
+ interface/rot.c  |  4 ++--
+ 4 files changed, 19 insertions(+), 24 deletions(-)
+
+diff --git a/interface/asum.c b/interface/asum.c
+index e6fcf4d..0cb7ff8 100644
+--- a/interface/asum.c
++++ b/interface/asum.c
+@@ -75,7 +75,6 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX){
+   int mode, nthreads;
+   double mid_result= 0.0;
+   FLOAT dummyalpha[2] = {ZERO, ZERO};
+-  double *buffer = (double*)blas_memory_alloc(0);
+ #endif
+ 
+   if (n <= 0) return 0;
+@@ -99,8 +98,9 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX){
+ 
+ #ifdef SMP
+   } else {
++    double *buffer = (double*)blas_memory_alloc(0);
+ 
+-#ifndef DOUBLE 
++#ifndef DOUBLE
+ #ifndef COMPLEX
+     mode  =  BLAS_SINGLE | BLAS_REAL;
+ #else
+@@ -119,11 +119,10 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX){
+ 
+     for(i = 0; i < nthreads; i++)
+         mid_result += buffer[2*i];
+-    
++
+     ret = (FLOATRET)mid_result;
++    blas_memory_free(buffer);
+   }
+-
+- blas_memory_free(buffer);
+ #endif
+ 
+   FUNCTION_PROFILE_END(COMPSIZE, n, n);
+@@ -146,8 +145,6 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx){
+   int mode, nthreads;
+   double mid_result= 0.0;
+   FLOAT dummyalpha[2] = {ZERO, ZERO};
+-
+-  double *buffer = (double*)blas_memory_alloc(0);
+ #endif
+ 
+   if (n <= 0) return 0;
+@@ -171,8 +168,9 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx){
+ 
+ #ifdef SMP
+   } else {
++    double *buffer = (double*)blas_memory_alloc(0);
+ 
+-#ifndef DOUBLE 
++#ifndef DOUBLE
+ #ifndef COMPLEX
+     mode  =  BLAS_SINGLE | BLAS_REAL;
+ #else
+@@ -191,11 +189,10 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx){
+ 
+     for(i = 0; i < nthreads; i++)
+         mid_result += buffer[2*i];
+-    
++
+     ret = (FLOAT)mid_result;
++    blas_memory_free(buffer);
+   }
+-
+- blas_memory_free(buffer);
+ #endif
+ 
+   FUNCTION_PROFILE_END(COMPSIZE, n, n);
+diff --git a/interface/copy.c b/interface/copy.c
+index 7452c58..c889612 100644
+--- a/interface/copy.c
++++ b/interface/copy.c
+@@ -101,7 +101,7 @@ void CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+ #ifdef SMP
+   } else {
+ 
+-#ifndef DOUBLE 
++#ifndef DOUBLE
+ #ifndef COMPLEX
+     mode  =  BLAS_SINGLE | BLAS_REAL;
+ #else
+diff --git a/interface/dot.c b/interface/dot.c
+index 1ef9b34..edf3653 100644
+--- a/interface/dot.c
++++ b/interface/dot.c
+@@ -76,7 +76,6 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY){
+   int mode, nthreads;
+   double mid_result= 0.0;
+   FLOAT dummyalpha[2] = {ZERO, ZERO};
+-  double *buffer = (double*)blas_memory_alloc(0);
+ #endif
+ 
+   if (n <= 0) return 0.;
+@@ -103,8 +102,9 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY){
+ 
+ #ifdef SMP
+   } else {
++    double *buffer = (double*)blas_memory_alloc(0);
+ 
+-#ifndef DOUBLE 
++#ifndef DOUBLE
+     mode  =  BLAS_SINGLE | BLAS_REAL;
+ #else
+     mode  =  BLAS_DOUBLE | BLAS_REAL;
+@@ -115,11 +115,11 @@ FLOATRET NAME(blasint *N, FLOAT *x, blasint *INCX, FLOAT *y, blasint *INCY){
+ 
+     for(i = 0; i < nthreads; i++)
+         mid_result += buffer[2*i];
+-    
++
+     ret = (FLOATRET)mid_result;
++    blas_memory_free(buffer);
+   }
+ 
+- blas_memory_free(buffer);
+ #endif
+ 
+   FUNCTION_PROFILE_END(1, 2 * n, 2 * n);
+@@ -142,8 +142,6 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+   int mode, nthreads;
+   double mid_result= 0.0;
+   FLOAT dummyalpha[2] = {ZERO, ZERO};
+-
+-  double *buffer = (double*)blas_memory_alloc(0);
+ #endif
+   if (n <= 0) return 0.;
+ 
+@@ -168,8 +166,9 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+ 
+ #ifdef SMP
+   } else {
++    double *buffer = (double*)blas_memory_alloc(0);
+ 
+-#ifndef DOUBLE 
++#ifndef DOUBLE
+     mode  =  BLAS_SINGLE | BLAS_REAL;
+ #else
+     mode  =  BLAS_DOUBLE | BLAS_REAL;
+@@ -180,11 +179,10 @@ FLOAT CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy){
+ 
+     for(i = 0; i < nthreads; i++)
+         mid_result += buffer[2*i];
+-    
++
+     ret = (FLOAT)mid_result;
++    blas_memory_free(buffer);
+   }
+-
+- blas_memory_free(buffer);
+ #endif
+ 
+   FUNCTION_PROFILE_END(1, 2 * n, 2 * n);
+diff --git a/interface/rot.c b/interface/rot.c
+index ae6b49c..46885f7 100644
+--- a/interface/rot.c
++++ b/interface/rot.c
+@@ -42,7 +42,7 @@
+ #include "functable.h"
+ #endif
+ 
+-#ifdef SMP 
++#ifdef SMP
+ static int rot_threads (BLASLONG m, BLASLONG n, BLASLONG k, float alpha,
+ 	       float* x, BLASLONG incx, float* y, BLASLONG incy, float* z, BLASLONG incz)
+ {
+@@ -102,7 +102,7 @@ void CNAME(blasint n, FLOAT *x, blasint incx, FLOAT *y, blasint incy, FLOAT c, F
+ #ifdef SMP
+   } else {
+ 
+-#ifndef DOUBLE 
++#ifndef DOUBLE
+     mode  =  BLAS_SINGLE | BLAS_REAL;
+ #else
+     mode  =  BLAS_DOUBLE | BLAS_REAL;
+-- 
+2.12.2
+
