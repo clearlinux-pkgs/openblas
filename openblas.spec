@@ -75,7 +75,7 @@ pushd ..
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	pushd openblas-avx2
-	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/avx2
+	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/haswell
 	popd
 popd
 
@@ -96,19 +96,19 @@ popd
 /usr/include/lapacke_mangling.h
 /usr/include/lapacke_utils.h
 /usr/include/openblas_config.h
-/usr/lib64/avx2/libopenblas.so
-/usr/lib64/avx2/libopenblas.so.0
-/usr/lib64/avx2/libopenblas_haswellp-r0.2.19.so
+/usr/lib64/haswell/libopenblas.so
+/usr/lib64/haswell/libopenblas.so.0
+/usr/lib64/haswell/libopenblas_haswellp-r0.2.19.so
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
 /usr/lib64/libopenblas_sandybridgep-r0.2.19.so
-/usr/lib64/avx2/cmake/openblas/OpenBLASConfig.cmake
+/usr/lib64/haswell/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
-/usr/lib64/avx2/cmake/openblas/OpenBLASConfigVersion.cmake
+/usr/lib64/haswell/cmake/openblas/OpenBLASConfigVersion.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
 
 %files staticdev
-/usr/lib64/avx2/libopenblas.a
-/usr/lib64/avx2/libopenblas_haswellp-r0.2.19.a
+/usr/lib64/haswell/libopenblas.a
+/usr/lib64/haswell/libopenblas_haswellp-r0.2.19.a
 /usr/lib64/libopenblas.a
 /usr/lib64/libopenblas_sandybridgep-r0.2.19.a
