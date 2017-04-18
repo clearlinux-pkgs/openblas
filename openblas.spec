@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.2.19
-Release  : 46
+Release  : 47
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.19.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -10,10 +10,6 @@ License  : BSD-3-Clause
 Patch1: lto.patch
 Patch2: noyield.patch
 Patch3: threadpatch.patch
-Patch4: oncopy.patch
-Patch5: matrixsize.patch
-Patch6: mt.patch
-Patch7: fix-mt.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -38,10 +34,6 @@ OpenBLAS is an optimized linear algebra library.
 %patch1 -p1
 %patch2 -p1
 %patch3 -p1
-#%patch4 -p1
-#%patch5 -p1
-%patch6 -p1
-%patch7 -p1
 
 %build
 export AR=gcc-ar
