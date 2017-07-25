@@ -1,8 +1,8 @@
 Name     : openblas
-Version  : 0.2.19
+Version  : 0.2.20
 Release  : 50
 URL      : http://www.openblas.net/
-Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.19.tar.gz
+Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.20.tar.gz
 Summary  : The OpenBLAS linear algebra package
 Group    : Development/Tools
 License  : BSD-3-Clause
@@ -96,12 +96,14 @@ popd
 /usr/include/lapacke_mangling.h
 /usr/include/lapacke_utils.h
 /usr/include/openblas_config.h
+/usr/lib64/haswell/pkgconfig/openblas.pc
+/usr/lib64/pkgconfig/openblas.pc
 /usr/lib64/haswell/libopenblas.so
 /usr/lib64/haswell/libopenblas.so.0
-/usr/lib64/haswell/libopenblas_haswellp-r0.2.19.so
+/usr/lib64/haswell/libopenblas_haswellp-r0.2.20.so
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
-/usr/lib64/libopenblas_sandybridgep-r0.2.19.so
+/usr/lib64/libopenblas_sandybridgep-r0.2.20.so
 /usr/lib64/haswell/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/haswell/cmake/openblas/OpenBLASConfigVersion.cmake
@@ -109,6 +111,6 @@ popd
 
 %files staticdev
 /usr/lib64/haswell/libopenblas.a
-/usr/lib64/haswell/libopenblas_haswellp-r0.2.19.a
+/usr/lib64/haswell/libopenblas_haswellp-r0.2.20.a
 /usr/lib64/libopenblas.a
-/usr/lib64/libopenblas_sandybridgep-r0.2.19.a
+/usr/lib64/libopenblas_sandybridgep-r0.2.20.a

@@ -1,6 +1,19 @@
---- OpenBLAS-0.2.15/Makefile.system~	2015-10-27 16:44:50.000000000 -0400
-+++ OpenBLAS-0.2.15/Makefile.system	2016-01-18 21:54:40.344083997 -0500
-@@ -193,10 +193,10 @@
+From a4809db6374a64ac114cc0de51369a9b023ea517 Mon Sep 17 00:00:00 2001
+From: Victor Rodriguez <victor.rodriguez.bahena@intel.com>
+Date: Mon, 24 Jul 2017 20:55:37 +0000
+Subject: [PATCH] lto
+
+Signed-off-by: Victor Rodriguez <victor.rodriguez.bahena@intel.com>
+---
+ Makefile.system                         | 10 +++++-----
+ lapack-netlib/INSTALL/make.inc.gfortran |  6 +++---
+ 2 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/Makefile.system b/Makefile.system
+index bd361a1..81cc9af 100644
+--- a/Makefile.system
++++ b/Makefile.system
+@@ -203,10 +203,10 @@ endif
  
  ARFLAGS	=
  CPP	= $(COMPILER) -E
@@ -13,23 +26,7 @@
  NM	= $(CROSS_SUFFIX)nm
  DLLWRAP = $(CROSS_SUFFIX)dllwrap
  OBJCOPY = $(CROSS_SUFFIX)objcopy
---- OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran~	2015-10-27 16:44:50.000000000 -0400
-+++ OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran	2016-01-18 21:57:05.438270070 -0500
-@@ -52,9 +52,9 @@
- #  The archiver and the flag(s) to use when building archive (library)
- #  If you system has no ranlib, set RANLIB = echo.
- #
--ARCH     = ar
-+ARCH     = gcc-ar
- ARCHFLAGS= cr
--RANLIB   = ranlib
-+RANLIB   = gcc-ranlib
- #
- #  Location of the extended-precision BLAS (XBLAS) Fortran library
- #  used for building and testing extended-precision routines.  The
---- OpenBLAS-0.2.15/Makefile.system~	2016-01-18 21:54:40.000000000 -0500
-+++ OpenBLAS-0.2.15/Makefile.system	2016-02-16 11:38:26.214013656 -0500
-@@ -226,7 +226,7 @@
+@@ -238,7 +238,7 @@ MD5SUM = md5 -n
  endif
  
  ifeq ($(OSNAME), Linux)
@@ -38,20 +35,7 @@
  NO_EXPRECISION = 1
  endif
  
---- OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran~	2016-01-18 21:57:05.000000000 -0500
-+++ OpenBLAS-0.2.15/lapack-netlib/INSTALL/make.inc.gfortran	2016-03-19 13:34:13.265646623 -0400
-@@ -13,7 +13,7 @@
- #  desired load options for your machine.
- #
- FORTRAN  = gfortran 
--OPTS     = -O2 -frecursive
-+OPTS     = -O3 -march=sandybridge -frecursive
- DRVOPTS  = $(OPTS)
- NOOPT    = -O0 -frecursive
- LOADER   = gfortran
---- OpenBLAS-0.2.16/Makefile.system~	2016-03-19 16:48:04.000000000 -0400
-+++ OpenBLAS-0.2.16/Makefile.system	2016-03-19 16:49:00.368537731 -0400
-@@ -984,11 +984,11 @@
+@@ -1036,11 +1036,11 @@ FCOMMON_OPT += -g
  endif
  
  ifndef COMMON_OPT
@@ -65,3 +49,31 @@
  endif
  
  
+diff --git a/lapack-netlib/INSTALL/make.inc.gfortran b/lapack-netlib/INSTALL/make.inc.gfortran
+index ccd0994..ce85427 100644
+--- a/lapack-netlib/INSTALL/make.inc.gfortran
++++ b/lapack-netlib/INSTALL/make.inc.gfortran
+@@ -17,7 +17,7 @@ SHELL = /bin/sh
+ #  should not compile LAPACK with flags such as -ffpe-trap=overflow.
+ #
+ FORTRAN  = gfortran
+-OPTS     = -O2 -frecursive
++OPTS     = -O3 -march=sandybridge -frecursive
+ DRVOPTS  = $(OPTS)
+ NOOPT    = -O0 -frecursive
+ LOADER   = gfortran
+@@ -56,9 +56,9 @@ CFLAGS = -O3
+ #  The archiver and the flag(s) to use when building archive (library)
+ #  If you system has no ranlib, set RANLIB = echo.
+ #
+-ARCH     = ar
++ARCH     = gcc-ar
+ ARCHFLAGS= cr
+-RANLIB   = ranlib
++RANLIB   = gcc-ranlib
+ #
+ #  Location of the extended-precision BLAS (XBLAS) Fortran library
+ #  used for building and testing extended-precision routines.  The
+-- 
+2.13.3
+
