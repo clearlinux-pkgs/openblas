@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.2.20
-Release  : 52
+Release  : 53
 URL      : http://www.openblas.net/
 Source0  : http://github.com/xianyi/OpenBLAS/archive/v0.2.20.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -51,8 +51,6 @@ pushd ..
 	pushd openblas-noavx
 	make TARGET=SANDYBRIDGE F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NUM_THREADS=256 %{?_smp_mflags} 
 	popd
-	export CFLAGS="$CFLAGS -march=haswell "
-	export FFLAGS="$FFLAGS -mavx2 -O3 "
 	pushd openblas-avx2
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
