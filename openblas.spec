@@ -39,7 +39,7 @@ OpenBLAS is an optimized linear algebra library.
 export AR=gcc-ar
 export RANLIB=gcc-ranlib
 export CFLAGS="$CFLAGS  -fno-semantic-interposition -O3 "
-export FFLAGS="$CFLAGS --fno-semantic-interposition -O3 -fno-f2c "
+export FFLAGS="$CFLAGS -fno-semantic-interposition -O3 -fno-f2c "
 export CXXFLAGS="$CXXFLAGS -fno-semantic-interposition -O3 "
 
 sed -i -e "s/\-O2/\-O3/g" Makefile*
