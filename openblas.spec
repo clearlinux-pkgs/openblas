@@ -56,7 +56,7 @@ pushd ..
 	pushd openblas-avx2
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags} 
+	make TARGET=BROADWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 popd
 
