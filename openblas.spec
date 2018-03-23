@@ -52,14 +52,14 @@ pushd ..
 	cp -a OpenBLAS-%{version} openblas-avx512
 
 	pushd openblas-noavx
-	make TARGET=SANDYBRIDGE F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NUM_THREADS=256 %{?_smp_mflags} 
+	make TARGET=NEHALEM F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NUM_THREADS=256 %{?_smp_mflags} 
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	export FFLAGS="$FFLAGS -mavx2 -O3 "
 	pushd openblas-avx2
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=BROADWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 
 	export CFLAGS="$CFLAGS -march=skylake-avx512 "
@@ -67,7 +67,7 @@ pushd ..
 	pushd openblas-avx512
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=BROADWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 popd
 
@@ -126,7 +126,7 @@ popd
 /usr/lib64/haswell/avx512_1/pkgconfig/openblas.pc
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
-/usr/lib64/libopenblas_sandybridgep-r0.2.20.so
+/usr/lib64/libopenblas_nehalemp-r0.2.20.so
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
 
@@ -136,4 +136,4 @@ popd
 /usr/lib64/haswell/avx512_1/libopenblas.a
 /usr/lib64/haswell/avx512_1/libopenblas_haswellp-r0.2.20.a
 /usr/lib64/libopenblas.a
-/usr/lib64/libopenblas_sandybridgep-r0.2.20.a
+/usr/lib64/libopenblas_nehalemp-r0.2.20.a
