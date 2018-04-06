@@ -123,12 +123,12 @@ popd
 /usr/lib64/haswell/avx512_1/libopenblas_haswellp-r0.2.20.so
 /usr/lib64/haswell/avx512_1/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/haswell/avx512_1/cmake/openblas/OpenBLASConfigVersion.cmake
-/usr/lib64/haswell/avx512_1/pkgconfig/openblas.pc
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
 /usr/lib64/libopenblas_nehalemp-r0.2.20.so
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
+%exclude /usr/lib64/haswell/avx512_1/pkgconfig/openblas.pc
 
 %files staticdev
 /usr/lib64/haswell/libopenblas.a
