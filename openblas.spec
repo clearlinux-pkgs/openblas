@@ -63,7 +63,7 @@ pushd ..
 	popd
 
 	export CFLAGS="$CFLAGS -march=skylake-avx512 "
-	export FFLAGS="$FFLAGS -mavx2 -O3 -mavx512vl"
+	export FFLAGS="$FFLAGS -mavx2 -O3 -mavx512vl -march=skylake-avx512"
 	pushd openblas-avx512
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
