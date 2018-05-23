@@ -1,6 +1,6 @@
-From a4809db6374a64ac114cc0de51369a9b023ea517 Mon Sep 17 00:00:00 2001
+From d933c3e33638dfc20df63be1823408b3f46cab59 Mon Sep 17 00:00:00 2001
 From: Victor Rodriguez <victor.rodriguez.bahena@intel.com>
-Date: Mon, 24 Jul 2017 20:55:37 +0000
+Date: Wed, 23 May 2018 19:52:44 +0000
 Subject: [PATCH] lto
 
 Signed-off-by: Victor Rodriguez <victor.rodriguez.bahena@intel.com>
@@ -10,10 +10,10 @@ Signed-off-by: Victor Rodriguez <victor.rodriguez.bahena@intel.com>
  2 files changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/Makefile.system b/Makefile.system
-index bd361a1..81cc9af 100644
+index 7bfac1f..55ad862 100644
 --- a/Makefile.system
 +++ b/Makefile.system
-@@ -203,10 +203,10 @@ endif
+@@ -217,10 +217,10 @@ endif
  
  ARFLAGS	=
  CPP	= $(COMPILER) -E
@@ -26,7 +26,7 @@ index bd361a1..81cc9af 100644
  NM	= $(CROSS_SUFFIX)nm
  DLLWRAP = $(CROSS_SUFFIX)dllwrap
  OBJCOPY = $(CROSS_SUFFIX)objcopy
-@@ -238,7 +238,7 @@ MD5SUM = md5 -n
+@@ -252,7 +252,7 @@ MD5SUM = md5 -n
  endif
  
  ifeq ($(OSNAME), Linux)
@@ -35,7 +35,7 @@ index bd361a1..81cc9af 100644
  NO_EXPRECISION = 1
  endif
  
-@@ -1036,11 +1036,11 @@ FCOMMON_OPT += -g
+@@ -1079,11 +1079,11 @@ FCOMMON_OPT += -g
  endif
  
  ifndef COMMON_OPT
@@ -50,30 +50,30 @@ index bd361a1..81cc9af 100644
  
  
 diff --git a/lapack-netlib/INSTALL/make.inc.gfortran b/lapack-netlib/INSTALL/make.inc.gfortran
-index ccd0994..ce85427 100644
+index 39d98d4..9267b1d 100644
 --- a/lapack-netlib/INSTALL/make.inc.gfortran
 +++ b/lapack-netlib/INSTALL/make.inc.gfortran
-@@ -17,7 +17,7 @@ SHELL = /bin/sh
+@@ -20,7 +20,7 @@ CFLAGS = -O3
  #  should not compile LAPACK with flags such as -ffpe-trap=overflow.
  #
- FORTRAN  = gfortran
--OPTS     = -O2 -frecursive
-+OPTS     = -O3 -march=sandybridge -frecursive
- DRVOPTS  = $(OPTS)
- NOOPT    = -O0 -frecursive
- LOADER   = gfortran
-@@ -56,9 +56,9 @@ CFLAGS = -O3
- #  The archiver and the flag(s) to use when building archive (library)
- #  If you system has no ranlib, set RANLIB = echo.
+ FORTRAN = gfortran
+-OPTS    = -O2 -frecursive
++OPTS    = -O3 -march=sandybridge -frecursive
+ DRVOPTS = $(OPTS)
+ NOOPT   = -O0 -frecursive
+ 
+@@ -33,9 +33,9 @@ LOADOPTS =
+ #  The archiver and the flag(s) to use when building an archive
+ #  (library).  If your system has no ranlib, set RANLIB = echo.
  #
--ARCH     = ar
-+ARCH     = gcc-ar
- ARCHFLAGS= cr
--RANLIB   = ranlib
-+RANLIB   = gcc-ranlib
+-ARCH      = ar
++ARCH      = gcc-ar
+ ARCHFLAGS = cr
+-RANLIB    = ranlib
++RANLIB    = gcc-ranlib
+ 
+ #  Timer for the SECOND and DSECND routines
  #
- #  Location of the extended-precision BLAS (XBLAS) Fortran library
- #  used for building and testing extended-precision routines.  The
 -- 
-2.13.3
+2.17.0
 
