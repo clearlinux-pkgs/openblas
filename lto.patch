@@ -58,7 +58,7 @@ index 39d98d4..9267b1d 100644
  #
  FORTRAN = gfortran
 -OPTS    = -O2 -frecursive
-+OPTS    = -O3 -march=sandybridge -frecursive
++OPTS    = -O3 -march=westmere -frecursive
  DRVOPTS = $(OPTS)
  NOOPT   = -O0 -frecursive
  
