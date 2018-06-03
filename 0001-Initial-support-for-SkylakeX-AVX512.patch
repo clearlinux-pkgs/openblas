@@ -1,0 +1,7822 @@
+From c484086ab909a2bc2a153d96db53c61d0003f22c Mon Sep 17 00:00:00 2001
+From: Arjan van de Ven <arjan@linux.intel.com>
+Date: Sun, 3 Jun 2018 07:24:29 +0000
+Subject: [PATCH] Initial support for SkylakeX / AVX512
+
+This patch adds the basic infrastructure for adding the SkylakeX (Intel Skylake server)
+target. The SkylakeX target will use the AVX512 (AVX512VL level) instruction set,
+which brings 2 basic things:
+1) 512 bit wide SIMD (2x width of AVX2)
+2) 32 SIMD registers (2x the number on AVX2)
+
+This initial patch only contains a trivial transofrmation of the Haswell SGEMM kernel
+to AVX512VL; more will follow later but this patch aims to get the infrastructure
+in place for this "later".
+
+Full performance tuning has not been done yet; with more registers and wider SIMD
+it's in theory possible to retune the kernels but even without that there's an
+interesting enough performance increase (30-40% range) with just this change.
+---
+ Makefile.system                            |    8 +-
+ TargetList.txt                             |    1 +
+ cmake/arch.cmake                           |    3 +
+ cmake/system.cmake                         |    2 +-
+ cpuid.h                                    |    3 +
+ cpuid_x86.c                                |    2 +
+ driver/others/dynamic.c                    |    2 +
+ driver/others/parameter.c                  |    4 +-
+ getarch.c                                  |   15 +
+ kernel/CMakeLists.txt                      |    2 +-
+ kernel/Makefile.L3                         |    4 +
+ kernel/setparam-ref.c                      |   16 +
+ kernel/x86/trsm_kernel_LN_2x4_penryn.S     |    2 +-
+ kernel/x86/trsm_kernel_LN_4x4_penryn.S     |    2 +-
+ kernel/x86/trsm_kernel_LT_2x4_penryn.S     |    2 +-
+ kernel/x86/trsm_kernel_LT_4x4_penryn.S     |    2 +-
+ kernel/x86/trsm_kernel_RT_2x4_penryn.S     |    2 +-
+ kernel/x86/trsm_kernel_RT_4x4_penryn.S     |    2 +-
+ kernel/x86/ztrsm_kernel_LN_2x2_penryn.S    |    2 +-
+ kernel/x86/ztrsm_kernel_LT_1x2_penryn.S    |    2 +-
+ kernel/x86/ztrsm_kernel_LT_2x2_penryn.S    |    2 +-
+ kernel/x86/ztrsm_kernel_RT_1x2_penryn.S    |    2 +-
+ kernel/x86/ztrsm_kernel_RT_2x2_penryn.S    |    2 +-
+ kernel/x86_64/KERNEL.SKYLAKEX              |    4 +
+ kernel/x86_64/caxpy.c                      |    2 +-
+ kernel/x86_64/cdot.c                       |    2 +-
+ kernel/x86_64/cgemv_n_4.c                  |    2 +-
+ kernel/x86_64/cgemv_t_4.c                  |    2 +-
+ kernel/x86_64/cscal.c                      |    2 +-
+ kernel/x86_64/daxpy.c                      |    2 +-
+ kernel/x86_64/ddot.c                       |    2 +-
+ kernel/x86_64/dgemv_n_4.c                  |    2 +-
+ kernel/x86_64/dgemv_t_4.c                  |    2 +-
+ kernel/x86_64/dscal.c                      |    2 +-
+ kernel/x86_64/dsymv_L.c                    |    2 +-
+ kernel/x86_64/dsymv_U.c                    |    2 +-
+ kernel/x86_64/saxpy.c                      |    2 +-
+ kernel/x86_64/sdot.c                       |    2 +-
+ kernel/x86_64/sgemm_kernel_16x4_skylakex.S | 6812 ++++++++++++++++++++
+ kernel/x86_64/sgemv_n_4.c                  |    2 +-
+ kernel/x86_64/sgemv_t_4.c                  |    2 +-
+ kernel/x86_64/ssymv_L.c                    |    2 +-
+ kernel/x86_64/ssymv_U.c                    |    2 +-
+ kernel/x86_64/symv_L_sse.S                 |    2 +-
+ kernel/x86_64/symv_L_sse2.S                |    2 +-
+ kernel/x86_64/symv_U_sse.S                 |    2 +-
+ kernel/x86_64/symv_U_sse2.S                |    2 +-
+ kernel/x86_64/zaxpy.c                      |    2 +-
+ kernel/x86_64/zdot.c                       |    2 +-
+ kernel/x86_64/zgemv_n_4.c                  |    2 +-
+ kernel/x86_64/zgemv_t_4.c                  |    2 +-
+ kernel/x86_64/zscal.c                      |    2 +-
+ kernel/x86_64/zsymv_L_sse.S                |    2 +-
+ kernel/x86_64/zsymv_L_sse2.S               |    2 +-
+ kernel/x86_64/zsymv_U_sse.S                |    2 +-
+ kernel/x86_64/zsymv_U_sse2.S               |    2 +-
+ param.h                                    |  119 +
+ 57 files changed, 7034 insertions(+), 47 deletions(-)
+ create mode 100644 kernel/x86_64/KERNEL.SKYLAKEX
+ create mode 100644 kernel/x86_64/sgemm_kernel_16x4_skylakex.S
+
+diff --git a/Makefile.system b/Makefile.system
+index 7bfac1fa..b005b80c 100644
+--- a/Makefile.system
++++ b/Makefile.system
+@@ -62,6 +62,9 @@ ifeq ($(BINARY), 32)
+ ifeq ($(TARGET), HASWELL)
+ GETARCH_FLAGS := -DFORCE_NEHALEM
+ endif
++ifeq ($(TARGET), SKYLAKEX)
++GETARCH_FLAGS := -DFORCE_NEHALEM
++endif
+ ifeq ($(TARGET), SANDYBRIDGE)
+ GETARCH_FLAGS := -DFORCE_NEHALEM
+ endif
+@@ -95,6 +98,9 @@ ifeq ($(BINARY), 32)
+ ifeq ($(TARGET_CORE), HASWELL)
+ GETARCH_FLAGS := -DFORCE_NEHALEM
+ endif
++ifeq ($(TARGET_CORE), SKYLAKEX)
++GETARCH_FLAGS := -DFORCE_NEHALEM
++endif
+ ifeq ($(TARGET_CORE), SANDYBRIDGE)
+ GETARCH_FLAGS := -DFORCE_NEHALEM
+ endif
+@@ -467,7 +473,7 @@ ifneq ($(NO_AVX), 1)
+ DYNAMIC_CORE += SANDYBRIDGE BULLDOZER PILEDRIVER STEAMROLLER EXCAVATOR
+ endif
+ ifneq ($(NO_AVX2), 1)
+-DYNAMIC_CORE += HASWELL ZEN
++DYNAMIC_CORE += HASWELL ZEN SKYLAKEX
+ endif
+ endif
+ 
+diff --git a/TargetList.txt b/TargetList.txt
+index aeeaa9ed..31e4881c 100644
+--- a/TargetList.txt
++++ b/TargetList.txt
+@@ -20,6 +20,7 @@ DUNNINGTON
+ NEHALEM
+ SANDYBRIDGE
+ HASWELL
++SKYLAKEX
+ ATOM
+ 
+ b)AMD CPU:
+diff --git a/cmake/arch.cmake b/cmake/arch.cmake
+index 798a9ef8..527d2bec 100644
+--- a/cmake/arch.cmake
++++ b/cmake/arch.cmake
+@@ -56,6 +56,9 @@ if (DYNAMIC_ARCH)
+     if (NOT NO_AVX2)
+       set(DYNAMIC_CORE ${DYNAMIC_CORE} HASWELL ZEN)
+     endif ()
++    if (NOT NO_AVX512)
++      set(DYNAMIC_CORE ${DYNAMIC_CORE} SKYLAKEX)
++    endif ()
+   endif ()
+ 
+   if (NOT DYNAMIC_CORE)
+diff --git a/cmake/system.cmake b/cmake/system.cmake
+index 64589567..c21fe7c1 100644
+--- a/cmake/system.cmake
++++ b/cmake/system.cmake
+@@ -33,7 +33,7 @@ endif ()
+ if (DEFINED BINARY AND DEFINED TARGET AND BINARY EQUAL 32)
+   message(STATUS "Compiling a ${BINARY}-bit binary.")
+   set(NO_AVX 1)
+-  if (${TARGET} STREQUAL "HASWELL" OR ${TARGET} STREQUAL "SANDYBRIDGE")
++  if (${TARGET} STREQUAL "HASWELL" OR ${TARGET} STREQUAL "SANDYBRIDGE" OR ${TARGET} STREQUAL "SKYLAKEX")
+     set(TARGET "NEHALEM")
+   endif ()
+   if (${TARGET} STREQUAL "BULLDOZER" OR ${TARGET} STREQUAL "PILEDRIVER" OR ${TARGET} STREQUAL "ZEN")
+diff --git a/cpuid.h b/cpuid.h
+index 1dacc49b..a6bc211f 100644
+--- a/cpuid.h
++++ b/cpuid.h
+@@ -115,6 +115,7 @@
+ #define CORE_STEAMROLLER 25
+ #define CORE_EXCAVATOR   26
+ #define CORE_ZEN         27
++#define CORE_SKYLAKEX    28
+ 
+ #define HAVE_SSE      (1 <<  0)
+ #define HAVE_SSE2     (1 <<  1)
+@@ -137,6 +138,7 @@
+ #define HAVE_AVX      (1 <<  18)
+ #define HAVE_FMA4     (1 <<  19)
+ #define HAVE_FMA3     (1 <<  20)
++#define HAVE_AVX512VL (1 <<  21)
+ 
+ #define CACHE_INFO_L1_I     1
+ #define CACHE_INFO_L1_D     2
+@@ -211,5 +213,6 @@ typedef struct {
+ #define CPUTYPE_STEAMROLLER 		49
+ #define CPUTYPE_EXCAVATOR 		50
+ #define CPUTYPE_ZEN 			51
++#define CPUTYPE_SKYLAKEX		52
+ 
+ #endif
+diff --git a/cpuid_x86.c b/cpuid_x86.c
+index 342c5652..5f49e771 100644
+--- a/cpuid_x86.c
++++ b/cpuid_x86.c
+@@ -50,6 +50,8 @@
+ #ifdef NO_AVX
+ #define CPUTYPE_HASWELL CPUTYPE_NEHALEM
+ #define CORE_HASWELL CORE_NEHALEM
++#define CPUTYPE_SKYLAKEX CPUTYPE_NEHALEM
++#define CORE_SKYLAKEX CORE_NEHALEM
+ #define CPUTYPE_SANDYBRIDGE CPUTYPE_NEHALEM
+ #define CORE_SANDYBRIDGE CORE_NEHALEM
+ #define CPUTYPE_BULLDOZER CPUTYPE_BARCELONA
+diff --git a/driver/others/dynamic.c b/driver/others/dynamic.c
+index fbf7cd40..a0c9794b 100644
+--- a/driver/others/dynamic.c
++++ b/driver/others/dynamic.c
+@@ -74,6 +74,7 @@ extern gotoblas_t  gotoblas_STEAMROLLER;
+ extern gotoblas_t  gotoblas_EXCAVATOR;
+ #ifdef NO_AVX2
+ #define gotoblas_HASWELL gotoblas_SANDYBRIDGE
++#define gotoblas_SKYLAKEX gotoblas_SANDYBRIDGE
+ #define gotoblas_ZEN gotoblas_SANDYBRIDGE
+ #else
+ extern gotoblas_t  gotoblas_HASWELL;
+@@ -83,6 +84,7 @@ extern gotoblas_t  gotoblas_ZEN;
+ //Use NEHALEM kernels for sandy bridge
+ #define gotoblas_SANDYBRIDGE gotoblas_NEHALEM
+ #define gotoblas_HASWELL gotoblas_NEHALEM
++#define gotoblas_SKYLAKEX gotoblas_NEHALEM
+ #define gotoblas_BULLDOZER gotoblas_BARCELONA
+ #define gotoblas_PILEDRIVER gotoblas_BARCELONA
+ #define gotoblas_STEAMROLLER gotoblas_BARCELONA
+diff --git a/driver/others/parameter.c b/driver/others/parameter.c
+index 31a48644..e7332c0c 100644
+--- a/driver/others/parameter.c
++++ b/driver/others/parameter.c
+@@ -167,7 +167,7 @@ int get_L2_size(void){
+ #if defined(ATHLON) || defined(OPTERON) || defined(BARCELONA) || defined(BOBCAT) || defined(BULLDOZER) || \
+     defined(CORE_PRESCOTT) || defined(CORE_CORE2) || defined(PENRYN) || defined(DUNNINGTON) || \
+     defined(CORE_NEHALEM) || defined(CORE_SANDYBRIDGE) || defined(ATOM) || defined(GENERIC) || \
+-    defined(PILEDRIVER) || defined(HASWELL) || defined(STEAMROLLER) || defined(EXCAVATOR) || defined(ZEN)
++    defined(PILEDRIVER) || defined(HASWELL) || defined(STEAMROLLER) || defined(EXCAVATOR) || defined(ZEN) || defined(SKYLAKEX)
+ 
+   cpuid(0x80000006, &eax, &ebx, &ecx, &edx);
+ 
+@@ -251,7 +251,7 @@ int get_L2_size(void){
+ void blas_set_parameter(void){
+ 
+   int factor;
+-#if defined(BULLDOZER) || defined(PILEDRIVER) || defined(SANDYBRIDGE) || defined(NEHALEM) || defined(HASWELL) || defined(STEAMROLLER) || defined(EXCAVATOR) || defined(ZEN)
++#if defined(BULLDOZER) || defined(PILEDRIVER) || defined(SANDYBRIDGE) || defined(NEHALEM) || defined(HASWELL) || defined(STEAMROLLER) || defined(EXCAVATOR) || defined(ZEN) || defined(SKYLAKEX)
+   int size = 16;
+ #else
+   int size = get_L2_size();
+diff --git a/getarch.c b/getarch.c
+index 992fc2b9..fcffe63e 100644
+--- a/getarch.c
++++ b/getarch.c
+@@ -326,6 +326,21 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #define CORENAME  "HASWELL"
+ #endif
+ 
++#ifdef FORCE_SKYLAKEX
++#define FORCE
++#define FORCE_INTEL
++#define ARCHITECTURE    "X86"
++#define SUBARCHITECTURE "SKYLAKEX"
++#define ARCHCONFIG   "-DSKYLAKEX " \
++		     "-DL1_DATA_SIZE=32768 -DL1_DATA_LINESIZE=64 " \
++		     "-DL2_SIZE=262144 -DL2_LINESIZE=64 " \
++		     "-DDTB_DEFAULT_ENTRIES=64 -DDTB_SIZE=4096 " \
++		     "-DHAVE_CMOV -DHAVE_MMX -DHAVE_SSE -DHAVE_SSE2 -DHAVE_SSE3 -DHAVE_SSSE3 -DHAVE_SSE4_1 -DHAVE_SSE4_2 -DHAVE_AVX " \
++                     "-DFMA3 -DHAVE_AVX512VL -march=skylake-avx512"
++#define LIBNAME   "skylakex"
++#define CORENAME  "SKYLAKEX"
++#endif
++
+ #ifdef FORCE_ATOM
+ #define FORCE
+ #define FORCE_INTEL
+diff --git a/kernel/CMakeLists.txt b/kernel/CMakeLists.txt
+index c06d1eae..6e505f4c 100644
+--- a/kernel/CMakeLists.txt
++++ b/kernel/CMakeLists.txt
+@@ -121,7 +121,7 @@ function (build_core TARGET_CORE KDIR TSUFFIX KERNEL_DEFINITIONS)
+     # Makefile.L3
+     set(USE_TRMM false)
+ 
+-    if (ARM OR ARM64 OR "${TARGET_CORE}" STREQUAL "LONGSOON3B" OR "${TARGET_CORE}" STREQUAL "GENERIC" OR "${CORE}" STREQUAL "generic" OR "${TARGET_CORE}" STREQUAL "HASWELL" OR "${CORE}" STREQUAL "haswell" OR "${CORE}" STREQUAL "zen")
++    if (ARM OR ARM64 OR "${TARGET_CORE}" STREQUAL "LONGSOON3B" OR "${TARGET_CORE}" STREQUAL "GENERIC" OR "${CORE}" STREQUAL "generic" OR "${TARGET_CORE}" STREQUAL "HASWELL" OR "${CORE}" STREQUAL "haswell" OR "${CORE}" STREQUAL "zen" or "${TARGET_CORE}" STREQUAL "SKYLAKEX" or "${CORE}" STREQUAL "skylakex")
+       set(USE_TRMM true)
+     endif ()
+ 
+diff --git a/kernel/Makefile.L3 b/kernel/Makefile.L3
+index 06642639..b37e536e 100644
+--- a/kernel/Makefile.L3
++++ b/kernel/Makefile.L3
+@@ -32,6 +32,10 @@ ifeq ($(CORE), HASWELL)
+ USE_TRMM = 1
+ endif
+ 
++ifeq ($(CORE), SKYLAKEX)
++USE_TRMM = 1
++endif
++
+ ifeq ($(CORE), ZEN)
+ USE_TRMM = 1
+ endif
+diff --git a/kernel/setparam-ref.c b/kernel/setparam-ref.c
+index b6c5b54d..9030d7c6 100644
+--- a/kernel/setparam-ref.c
++++ b/kernel/setparam-ref.c
+@@ -871,6 +871,22 @@ static void init_parameter(void) {
+ #endif
+ #endif
+ 
++#ifdef SKYLAKEX
++
++#ifdef DEBUG
++  fprintf(stderr, "SkylakeX\n");
++#endif
++
++  TABLE_NAME.sgemm_p = SGEMM_DEFAULT_P;
++  TABLE_NAME.dgemm_p = DGEMM_DEFAULT_P;
++  TABLE_NAME.cgemm_p = CGEMM_DEFAULT_P;
++  TABLE_NAME.zgemm_p = ZGEMM_DEFAULT_P;
++#ifdef EXPRECISION
++  TABLE_NAME.qgemm_p = QGEMM_DEFAULT_P;
++  TABLE_NAME.xgemm_p = XGEMM_DEFAULT_P;
++#endif
++#endif
++
+ 
+ #ifdef OPTERON
+ 
+diff --git a/kernel/x86/trsm_kernel_LN_2x4_penryn.S b/kernel/x86/trsm_kernel_LN_2x4_penryn.S
+index 0b475afa..34653d40 100644
+--- a/kernel/x86/trsm_kernel_LN_2x4_penryn.S
++++ b/kernel/x86/trsm_kernel_LN_2x4_penryn.S
+@@ -62,7 +62,7 @@
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH     prefetcht0
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+diff --git a/kernel/x86/trsm_kernel_LN_4x4_penryn.S b/kernel/x86/trsm_kernel_LN_4x4_penryn.S
+index e98854f3..492f3434 100644
+--- a/kernel/x86/trsm_kernel_LN_4x4_penryn.S
++++ b/kernel/x86/trsm_kernel_LN_4x4_penryn.S
+@@ -62,7 +62,7 @@
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH     prefetcht0
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+diff --git a/kernel/x86/trsm_kernel_LT_2x4_penryn.S b/kernel/x86/trsm_kernel_LT_2x4_penryn.S
+index 086852cf..6840c54a 100644
+--- a/kernel/x86/trsm_kernel_LT_2x4_penryn.S
++++ b/kernel/x86/trsm_kernel_LT_2x4_penryn.S
+@@ -62,7 +62,7 @@
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH     prefetcht0
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+diff --git a/kernel/x86/trsm_kernel_LT_4x4_penryn.S b/kernel/x86/trsm_kernel_LT_4x4_penryn.S
+index 2dd8ad08..361ccf60 100644
+--- a/kernel/x86/trsm_kernel_LT_4x4_penryn.S
++++ b/kernel/x86/trsm_kernel_LT_4x4_penryn.S
+@@ -62,7 +62,7 @@
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL || defined (SKYLAKEX))
+ #define PREFETCH     prefetcht0
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+diff --git a/kernel/x86/trsm_kernel_RT_2x4_penryn.S b/kernel/x86/trsm_kernel_RT_2x4_penryn.S
+index 154276f6..11825429 100644
+--- a/kernel/x86/trsm_kernel_RT_2x4_penryn.S
++++ b/kernel/x86/trsm_kernel_RT_2x4_penryn.S
+@@ -62,7 +62,7 @@
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH     prefetcht0
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+diff --git a/kernel/x86/trsm_kernel_RT_4x4_penryn.S b/kernel/x86/trsm_kernel_RT_4x4_penryn.S
+index acdcd6e2..4c054f39 100644
+--- a/kernel/x86/trsm_kernel_RT_4x4_penryn.S
++++ b/kernel/x86/trsm_kernel_RT_4x4_penryn.S
+@@ -62,7 +62,7 @@
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH     prefetcht0
+ #define PREFETCHSIZE  (8 * 21 + 4)
+ #endif
+diff --git a/kernel/x86/ztrsm_kernel_LN_2x2_penryn.S b/kernel/x86/ztrsm_kernel_LN_2x2_penryn.S
+index da561b58..e6749673 100644
+--- a/kernel/x86/ztrsm_kernel_LN_2x2_penryn.S
++++ b/kernel/x86/ztrsm_kernel_LN_2x2_penryn.S
+@@ -61,7 +61,7 @@
+ #define PREFETCHSIZE 84
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht1
+ #define PREFETCHSIZE 84
+ #endif
+diff --git a/kernel/x86/ztrsm_kernel_LT_1x2_penryn.S b/kernel/x86/ztrsm_kernel_LT_1x2_penryn.S
+index a11b0286..49805769 100644
+--- a/kernel/x86/ztrsm_kernel_LT_1x2_penryn.S
++++ b/kernel/x86/ztrsm_kernel_LT_1x2_penryn.S
+@@ -63,7 +63,7 @@
+ #define PREFETCHSIZE 84
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht1
+ #define PREFETCHSIZE 84
+ #endif
+diff --git a/kernel/x86/ztrsm_kernel_LT_2x2_penryn.S b/kernel/x86/ztrsm_kernel_LT_2x2_penryn.S
+index 787ab598..f3072983 100644
+--- a/kernel/x86/ztrsm_kernel_LT_2x2_penryn.S
++++ b/kernel/x86/ztrsm_kernel_LT_2x2_penryn.S
+@@ -61,7 +61,7 @@
+ #define PREFETCHSIZE 84
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht1
+ #define PREFETCHSIZE 84
+ #endif
+diff --git a/kernel/x86/ztrsm_kernel_RT_1x2_penryn.S b/kernel/x86/ztrsm_kernel_RT_1x2_penryn.S
+index 9a3b0cbd..879ae9c3 100644
+--- a/kernel/x86/ztrsm_kernel_RT_1x2_penryn.S
++++ b/kernel/x86/ztrsm_kernel_RT_1x2_penryn.S
+@@ -63,7 +63,7 @@
+ #define PREFETCHSIZE 84
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht1
+ #define PREFETCHSIZE 84
+ #endif
+diff --git a/kernel/x86/ztrsm_kernel_RT_2x2_penryn.S b/kernel/x86/ztrsm_kernel_RT_2x2_penryn.S
+index bd7a78b5..6c308197 100644
+--- a/kernel/x86/ztrsm_kernel_RT_2x2_penryn.S
++++ b/kernel/x86/ztrsm_kernel_RT_2x2_penryn.S
+@@ -61,7 +61,7 @@
+ #define PREFETCHSIZE 84
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht1
+ #define PREFETCHSIZE 84
+ #endif
+diff --git a/kernel/x86_64/KERNEL.SKYLAKEX b/kernel/x86_64/KERNEL.SKYLAKEX
+new file mode 100644
+index 00000000..744831d6
+--- /dev/null
++++ b/kernel/x86_64/KERNEL.SKYLAKEX
+@@ -0,0 +1,4 @@
++include $(KERNELDIR)/KERNEL.HASWELL
++
++SGEMMKERNEL    =  sgemm_kernel_16x4_skylakex.S
++
+diff --git a/kernel/x86_64/caxpy.c b/kernel/x86_64/caxpy.c
+index b1ec19bd..586d05ac 100644
+--- a/kernel/x86_64/caxpy.c
++++ b/kernel/x86_64/caxpy.c
+@@ -33,7 +33,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "caxpy_microk_steamroller-2.c"
+ #elif defined(BULLDOZER)
+ #include "caxpy_microk_bulldozer-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined(SKYLAKEX)
+ #include "caxpy_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "caxpy_microk_sandy-2.c"
+diff --git a/kernel/x86_64/cdot.c b/kernel/x86_64/cdot.c
+index 5f01f7ee..93fca0a0 100644
+--- a/kernel/x86_64/cdot.c
++++ b/kernel/x86_64/cdot.c
+@@ -34,7 +34,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "cdot_microk_bulldozer-2.c"
+ #elif defined(STEAMROLLER) || defined(PILEDRIVER)  || defined(EXCAVATOR)
+ #include "cdot_microk_steamroller-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "cdot_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "cdot_microk_sandy-2.c"
+diff --git a/kernel/x86_64/cgemv_n_4.c b/kernel/x86_64/cgemv_n_4.c
+index 770c955b..d81766cd 100644
+--- a/kernel/x86_64/cgemv_n_4.c
++++ b/kernel/x86_64/cgemv_n_4.c
+@@ -29,7 +29,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include <stdio.h>
+ #include "common.h"
+ 
+-#if defined(HASWELL) || defined(ZEN)
++#if defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "cgemv_n_microk_haswell-4.c"
+ #elif defined(BULLDOZER) || defined(PILEDRIVER) || defined(STEAMROLLER) || defined(EXCAVATOR)
+ #include "cgemv_n_microk_bulldozer-4.c"
+diff --git a/kernel/x86_64/cgemv_t_4.c b/kernel/x86_64/cgemv_t_4.c
+index d75e58fd..6bdea678 100644
+--- a/kernel/x86_64/cgemv_t_4.c
++++ b/kernel/x86_64/cgemv_t_4.c
+@@ -28,7 +28,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #include "common.h"
+ 
+-#if defined(HASWELL) || defined(ZEN)
++#if defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "cgemv_t_microk_haswell-4.c"
+ #elif defined(BULLDOZER) || defined(PILEDRIVER) || defined(STEAMROLLER)  || defined(EXCAVATOR)
+ #include "cgemv_t_microk_bulldozer-4.c"
+diff --git a/kernel/x86_64/cscal.c b/kernel/x86_64/cscal.c
+index 9b9179da..72af9980 100644
+--- a/kernel/x86_64/cscal.c
++++ b/kernel/x86_64/cscal.c
+@@ -28,7 +28,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "common.h"
+ 
+ 
+-#if defined(HASWELL) || defined(ZEN)
++#if defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "cscal_microk_haswell-2.c"
+ #elif defined(BULLDOZER)  || defined(PILEDRIVER)
+ #include "cscal_microk_bulldozer-2.c"
+diff --git a/kernel/x86_64/daxpy.c b/kernel/x86_64/daxpy.c
+index 4bde6282..b4acdccd 100644
+--- a/kernel/x86_64/daxpy.c
++++ b/kernel/x86_64/daxpy.c
+@@ -37,7 +37,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "daxpy_microk_steamroller-2.c"
+ #elif defined(PILEDRIVER)
+ #include "daxpy_microk_piledriver-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "daxpy_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "daxpy_microk_sandy-2.c"
+diff --git a/kernel/x86_64/ddot.c b/kernel/x86_64/ddot.c
+index 8162a5d8..05954902 100644
+--- a/kernel/x86_64/ddot.c
++++ b/kernel/x86_64/ddot.c
+@@ -37,7 +37,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "ddot_microk_piledriver-2.c"
+ #elif defined(NEHALEM) 
+ #include "ddot_microk_nehalem-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "ddot_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "ddot_microk_sandy-2.c"
+diff --git a/kernel/x86_64/dgemv_n_4.c b/kernel/x86_64/dgemv_n_4.c
+index 1b9ca7a6..309fbe76 100644
+--- a/kernel/x86_64/dgemv_n_4.c
++++ b/kernel/x86_64/dgemv_n_4.c
+@@ -31,7 +31,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #if defined(NEHALEM)
+ #include "dgemv_n_microk_nehalem-4.c"
+-#elif defined(HASWELL) || defined(ZEN) || defined(STEAMROLLER) || defined(EXCAVATOR)
++#elif defined(HASWELL) || defined(ZEN) || defined(STEAMROLLER) || defined(EXCAVATOR) || defined (SKYLAKEX)
+ #include "dgemv_n_microk_haswell-4.c"
+ #endif
+ 
+diff --git a/kernel/x86_64/dgemv_t_4.c b/kernel/x86_64/dgemv_t_4.c
+index 6b99d6fd..a7478e3a 100644
+--- a/kernel/x86_64/dgemv_t_4.c
++++ b/kernel/x86_64/dgemv_t_4.c
+@@ -28,7 +28,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #include "common.h"
+ 
+-#if defined(HASWELL) || defined(ZEN) || defined(STEAMROLLER)  || defined(EXCAVATOR)
++#if defined(HASWELL) || defined(ZEN) || defined(STEAMROLLER)  || defined(EXCAVATOR) || defined (SKYLAKEX)
+ #include "dgemv_t_microk_haswell-4.c"
+ #endif
+ 
+diff --git a/kernel/x86_64/dscal.c b/kernel/x86_64/dscal.c
+index 42855861..2c7b3b17 100644
+--- a/kernel/x86_64/dscal.c
++++ b/kernel/x86_64/dscal.c
+@@ -31,7 +31,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "dscal_microk_bulldozer-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "dscal_microk_sandy-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "dscal_microk_haswell-2.c"
+ #endif
+ 
+diff --git a/kernel/x86_64/dsymv_L.c b/kernel/x86_64/dsymv_L.c
+index 3e8db3fa..73099462 100644
+--- a/kernel/x86_64/dsymv_L.c
++++ b/kernel/x86_64/dsymv_L.c
+@@ -30,7 +30,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #if defined(BULLDOZER) || defined(PILEDRIVER) || defined(STEAMROLLER) || defined(EXCAVATOR)
+ #include "dsymv_L_microk_bulldozer-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "dsymv_L_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "dsymv_L_microk_sandy-2.c"
+diff --git a/kernel/x86_64/dsymv_U.c b/kernel/x86_64/dsymv_U.c
+index 61cb77a6..431e4bb3 100644
+--- a/kernel/x86_64/dsymv_U.c
++++ b/kernel/x86_64/dsymv_U.c
+@@ -31,7 +31,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #if defined(BULLDOZER) || defined(PILEDRIVER) || defined(STEAMROLLER)  || defined(EXCAVATOR)
+ #include "dsymv_U_microk_bulldozer-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "dsymv_U_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "dsymv_U_microk_sandy-2.c"
+diff --git a/kernel/x86_64/saxpy.c b/kernel/x86_64/saxpy.c
+index d89fe408..d89c4070 100644
+--- a/kernel/x86_64/saxpy.c
++++ b/kernel/x86_64/saxpy.c
+@@ -31,7 +31,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #if defined(NEHALEM)
+ #include "saxpy_microk_nehalem-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "saxpy_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "saxpy_microk_sandy-2.c"
+diff --git a/kernel/x86_64/sdot.c b/kernel/x86_64/sdot.c
+index b6f3c21a..c3ab2ffe 100644
+--- a/kernel/x86_64/sdot.c
++++ b/kernel/x86_64/sdot.c
+@@ -34,7 +34,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "sdot_microk_steamroller-2.c"
+ #elif defined(NEHALEM)
+ #include "sdot_microk_nehalem-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "sdot_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "sdot_microk_sandy-2.c"
+diff --git a/kernel/x86_64/sgemm_kernel_16x4_skylakex.S b/kernel/x86_64/sgemm_kernel_16x4_skylakex.S
+new file mode 100644
+index 00000000..fc290b3c
+--- /dev/null
++++ b/kernel/x86_64/sgemm_kernel_16x4_skylakex.S
+@@ -0,0 +1,6812 @@
++/*********************************************************************************
++Copyright (c) 2013, The OpenBLAS Project
++All rights reserved.
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are
++met:
++1. Redistributions of source code must retain the above copyright
++notice, this list of conditions and the following disclaimer.
++2. Redistributions in binary form must reproduce the above copyright
++notice, this list of conditions and the following disclaimer in
++the documentation and/or other materials provided with the
++distribution.
++3. Neither the name of the OpenBLAS project nor the names of
++its contributors may be used to endorse or promote products
++derived from this software without specific prior written permission.
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ARE DISCLAIMED. IN NO EVENT SHALL THE OPENBLAS PROJECT OR CONTRIBUTORS BE
++LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
++USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++**********************************************************************************/
++
++/*********************************************************************
++* 2014/07/28 Saar
++*        BLASTEST               : OK
++*        CTEST                  : OK
++*        TEST                   : OK
++*
++* 2013/10/28 Saar
++* Parameter:
++*	SGEMM_DEFAULT_UNROLL_N	4
++*	SGEMM_DEFAULT_UNROLL_M	16
++*	SGEMM_DEFAULT_P		768
++*	SGEMM_DEFAULT_Q		384
++*	A_PR1			512
++*	B_PR1			512
++*	
++* 
++* 2014/07/28 Saar
++* Performance at 9216x9216x9216:
++*       1 thread:      102 GFLOPS       (SANDYBRIDGE:  59)      (MKL:   83)
++*       2 threads:     195 GFLOPS       (SANDYBRIDGE: 116)      (MKL:  155)
++*       3 threads:     281 GFLOPS       (SANDYBRIDGE: 165)      (MKL:  230)
++*       4 threads:     366 GFLOPS       (SANDYBRIDGE: 223)      (MKL:  267)
++*
++*********************************************************************/
++
++#define ASSEMBLER
++#include "common.h"
++ 
++#define OLD_M	%rdi
++#define OLD_N	%rsi
++#define M	%r13
++#define J	%r14
++#define OLD_K	%rdx
++
++#define A	%rcx
++#define B	%r8
++#define C	%r9
++#define LDC	%r10
++	
++#define I	%r11
++#define AO	%rdi
++#define BO	%rsi
++#define	CO1	%r15
++#define K	%r12
++#define BI	%rbp
++#define BO2	%rbp
++#define	SP	%rbx
++
++#define BO1	%rdi
++#define	CO2	%rdx
++
++#ifndef WINDOWS_ABI
++
++#define STACKSIZE 96
++
++#else
++
++#define STACKSIZE 256
++
++#define OLD_A		40 + STACKSIZE(%rsp)
++#define OLD_B		48 + STACKSIZE(%rsp)
++#define OLD_C		56 + STACKSIZE(%rsp)
++#define OLD_LDC		64 + STACKSIZE(%rsp)
++#define OLD_OFFSET	72 + STACKSIZE(%rsp)
++
++#endif
++
++#if defined(OS_WINDOWS)
++#define L_BUFFER_SIZE 8192
++#else
++#define L_BUFFER_SIZE 12288
++#endif
++
++#define Ndiv6	 24(%rsp)
++#define Nmod6	 32(%rsp)
++#define N	 40(%rsp)
++#define ALPHA	 48(%rsp)
++#define OFFSET	 56(%rsp)
++#define KK	 64(%rsp)
++#define KKK	 72(%rsp)
++#define BUFFER1	           128(%rsp)
++
++#if defined(OS_WINDOWS)
++#if   L_BUFFER_SIZE > 16384
++#define STACK_TOUCH \
++        movl    $0,  4096 * 4(%rsp);\
++        movl    $0,  4096 * 3(%rsp);\
++        movl    $0,  4096 * 2(%rsp);\
++        movl    $0,  4096 * 1(%rsp);
++#elif L_BUFFER_SIZE > 12288
++#define STACK_TOUCH \
++        movl    $0,  4096 * 3(%rsp);\
++        movl    $0,  4096 * 2(%rsp);\
++        movl    $0,  4096 * 1(%rsp);
++#elif L_BUFFER_SIZE > 8192
++#define STACK_TOUCH \
++        movl    $0,  4096 * 2(%rsp);\
++        movl    $0,  4096 * 1(%rsp);
++#elif L_BUFFER_SIZE > 4096
++#define STACK_TOUCH \
++        movl    $0,  4096 * 1(%rsp);
++#else
++#define STACK_TOUCH
++#endif
++#else
++#define STACK_TOUCH
++#endif
++
++#if defined(BULLDOZER)
++
++#define VFMADD231PS_( y0,y1,y2 ) vfmaddps y0,y1,y2,y0
++
++#define VFMADD231SS_( x0,x1,x2 ) vfmaddss x0,x1,x2,x0
++
++#else
++
++#define VFMADD231PS_( y0,y1,y2 ) vfmadd231ps y1,y2,y0
++
++#define VFMADD231SS_( x0,x1,x2 ) vfmadd231ss x1,x2,x0
++
++#endif
++
++
++#define	A_PR1	512
++#define	B_PR1	512
++
++/*******************************************************************************************
++* 6 lines of N
++*******************************************************************************************/
++
++.macro KERNEL16x6_SUB
++	vmovups 	-16 * SIZE(AO), %zmm0
++	vbroadcastss	 -4 * SIZE(BO), %zmm2
++	vbroadcastss	 -3 * SIZE(BO), %zmm3
++	prefetcht0	A_PR1(AO)
++
++	VFMADD231PS_(  	%zmm4,%zmm2,%zmm0 )
++	VFMADD231PS_(  	%zmm6,%zmm3,%zmm0 )
++
++	vbroadcastss	 -2 * SIZE(BO), %zmm2
++	vbroadcastss	 -1 * SIZE(BO), %zmm3
++	VFMADD231PS_(  	%zmm8,%zmm2,%zmm0  )
++	VFMADD231PS_(  	%zmm10,%zmm3,%zmm0 )
++
++	vbroadcastss	  0 * SIZE(BO), %zmm2
++	vbroadcastss	  1 * SIZE(BO), %zmm3
++	VFMADD231PS_(  	%zmm12,%zmm2,%zmm0  )
++	VFMADD231PS_(  	%zmm14,%zmm3,%zmm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 16*SIZE, AO 
++	decq	%rax 
++.endm
++
++.macro KERNEL16x6_SUB4
++	vmovups 	-16 * SIZE(AO), %zmm0
++	vbroadcastss	 -4 * SIZE(BO), %zmm2
++	vbroadcastss	 -3 * SIZE(BO), %zmm3
++	prefetcht0	A_PR1(AO)
++
++	VFMADD231PS_(  	%zmm4,%zmm2,%zmm0 )
++	VFMADD231PS_(  	%zmm6,%zmm3,%zmm0 )
++
++	vbroadcastss	 -2 * SIZE(BO), %zmm7
++	vbroadcastss	 -1 * SIZE(BO), %zmm9
++	VFMADD231PS_(  	%zmm8,%zmm7,%zmm0  )
++	VFMADD231PS_(  	%zmm10,%zmm9,%zmm0 )
++
++	vbroadcastss	  0 * SIZE(BO), %zmm11
++	vbroadcastss	  1 * SIZE(BO), %zmm13
++	VFMADD231PS_(  	%zmm12,%zmm11,%zmm0  )
++	VFMADD231PS_(  	%zmm14,%zmm13,%zmm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 16*SIZE, AO 
++	decq	%rax 
++	vmovups 	-16 * SIZE(AO), %zmm0
++	vbroadcastss	 -4 * SIZE(BO), %zmm16
++	vbroadcastss	 -3 * SIZE(BO), %zmm17
++
++	VFMADD231PS_(  	%zmm4,%zmm16,%zmm0 )
++	VFMADD231PS_(  	%zmm6,%zmm17,%zmm0 )
++
++	vbroadcastss	 -2 * SIZE(BO), %zmm18
++	vbroadcastss	 -1 * SIZE(BO), %zmm19
++	VFMADD231PS_(  	%zmm8,%zmm18,%zmm0  )
++	VFMADD231PS_(  	%zmm10,%zmm19,%zmm0 )
++
++	vbroadcastss	  0 * SIZE(BO), %zmm20
++	vbroadcastss	  1 * SIZE(BO), %zmm21
++	VFMADD231PS_(  	%zmm12,%zmm20,%zmm0  )
++	VFMADD231PS_(  	%zmm14,%zmm21,%zmm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 16*SIZE, AO 
++	decq	%rax 
++
++	vmovups 	-16 * SIZE(AO), %zmm0
++	vbroadcastss	 -4 * SIZE(BO), %zmm22
++	vbroadcastss	 -3 * SIZE(BO), %zmm23
++
++	VFMADD231PS_(  	%zmm4,%zmm22,%zmm0 )
++	VFMADD231PS_(  	%zmm6,%zmm23,%zmm0 )
++
++	vbroadcastss	 -2 * SIZE(BO), %zmm24
++	vbroadcastss	 -1 * SIZE(BO), %zmm25
++	VFMADD231PS_(  	%zmm8,%zmm24,%zmm0  )
++	VFMADD231PS_(  	%zmm10,%zmm25,%zmm0 )
++
++	vbroadcastss	  0 * SIZE(BO), %zmm26
++	vbroadcastss	  1 * SIZE(BO), %zmm27
++	VFMADD231PS_(  	%zmm12,%zmm26,%zmm0  )
++	VFMADD231PS_(  	%zmm14,%zmm27,%zmm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 16*SIZE, AO 
++	decq	%rax 
++	vmovups 	-16 * SIZE(AO), %zmm0
++	vbroadcastss	 -4 * SIZE(BO), %zmm28
++	vbroadcastss	 -3 * SIZE(BO), %zmm29
++
++	VFMADD231PS_(  	%zmm4,%zmm28,%zmm0 )
++	VFMADD231PS_(  	%zmm6,%zmm29,%zmm0 )
++
++	vbroadcastss	 -2 * SIZE(BO), %zmm30
++	vbroadcastss	 -1 * SIZE(BO), %zmm31
++	VFMADD231PS_(  	%zmm8,%zmm30,%zmm0  )
++	VFMADD231PS_(  	%zmm10,%zmm31,%zmm0 )
++
++	vbroadcastss	  0 * SIZE(BO), %zmm1
++	vbroadcastss	  1 * SIZE(BO), %zmm5
++	VFMADD231PS_(  	%zmm12,%zmm1,%zmm0  )
++	VFMADD231PS_(  	%zmm14,%zmm5,%zmm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 16*SIZE, AO 
++	decq	%rax 
++.endm
++
++.macro SAVE16x6
++
++	vbroadcastss	ALPHA, %zmm0
++
++	vmulps	%zmm0 , %zmm4 , %zmm4
++	vmulps	%zmm0 , %zmm6 , %zmm6
++	vmulps	%zmm0 , %zmm8 , %zmm8
++	vmulps	%zmm0 , %zmm10, %zmm10
++	vmulps	%zmm0 , %zmm12, %zmm12
++	vmulps	%zmm0 , %zmm14, %zmm14
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %zmm4,%zmm4
++
++	vaddps 	        (CO1, LDC), %zmm6,%zmm6
++
++	vaddps 	        (CO1, LDC,2), %zmm8,%zmm8
++
++	vaddps 	        (CO2), %zmm10,%zmm10
++
++	vaddps 	        (CO2, LDC), %zmm12,%zmm12
++
++	vaddps 	        (CO2, LDC,2), %zmm14,%zmm14
++
++#endif
++
++	vmovups	%zmm4 ,  	(CO1)
++
++	vmovups	%zmm6 ,  	(CO1, LDC)
++
++	vmovups	%zmm8 ,  	(CO1, LDC,2)
++
++	vmovups	%zmm10,  	(CO2)
++
++	vmovups	%zmm12,  	(CO2, LDC)
++
++	vmovups	%zmm14,  	(CO2, LDC,2)
++
++.endm
++
++
++
++
++/*******************************************************************************************/
++
++.macro KERNEL8x6_SUB
++	vmovups 	-16 * SIZE(AO), %ymm0
++	vbroadcastss	 -4 * SIZE(BO), %ymm2
++	vbroadcastss	 -3 * SIZE(BO), %ymm3
++
++	VFMADD231PS_(  	%ymm4,%ymm2,%ymm0 )
++	VFMADD231PS_(  	%ymm6,%ymm3,%ymm0 )
++
++	vbroadcastss	 -2 * SIZE(BO), %ymm2
++	vbroadcastss	 -1 * SIZE(BO), %ymm3
++	VFMADD231PS_(  	%ymm8,%ymm2,%ymm0  )
++	VFMADD231PS_(  	%ymm10,%ymm3,%ymm0 )
++
++	vbroadcastss	  0 * SIZE(BO), %ymm2
++	vbroadcastss	  1 * SIZE(BO), %ymm3
++	VFMADD231PS_(  	%ymm12,%ymm2,%ymm0  )
++	VFMADD231PS_(  	%ymm14,%ymm3,%ymm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 8*SIZE, AO 
++	decq	%rax 
++.endm
++
++.macro SAVE8x6
++
++	vbroadcastss	ALPHA, %ymm0
++
++	vmulps	%ymm0 , %ymm4 , %ymm4
++	vmulps	%ymm0 , %ymm6 , %ymm6
++	vmulps	%ymm0 , %ymm8 , %ymm8
++	vmulps	%ymm0 , %ymm10, %ymm10
++	vmulps	%ymm0 , %ymm12, %ymm12
++	vmulps	%ymm0 , %ymm14, %ymm14
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %ymm4,%ymm4
++	vaddps 	        (CO1, LDC), %ymm6,%ymm6
++	vaddps 	        (CO1, LDC,2), %ymm8,%ymm8
++	vaddps 	        (CO2), %ymm10,%ymm10
++	vaddps 	        (CO2, LDC), %ymm12,%ymm12
++	vaddps 	        (CO2, LDC,2), %ymm14,%ymm14
++
++#endif
++
++	vmovups	%ymm4 ,  	(CO1)
++	vmovups	%ymm6 ,  	(CO1, LDC)
++	vmovups	%ymm8 ,  	(CO1, LDC,2)
++	vmovups	%ymm10,  	(CO2)
++	vmovups	%ymm12,  	(CO2, LDC)
++	vmovups	%ymm14,  	(CO2, LDC,2)
++
++.endm
++
++
++
++/*******************************************************************************************/
++
++.macro KERNEL4x6_SUB
++	vmovups 	-16 * SIZE(AO), %xmm0
++	vbroadcastss	 -4 * SIZE(BO), %xmm2
++	vbroadcastss	 -3 * SIZE(BO), %xmm3
++
++	VFMADD231PS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231PS_(  	%xmm6,%xmm3,%xmm0 )
++
++	vbroadcastss	 -2 * SIZE(BO), %xmm2
++	vbroadcastss	 -1 * SIZE(BO), %xmm3
++	VFMADD231PS_(  	%xmm8,%xmm2,%xmm0  )
++	VFMADD231PS_(  	%xmm10,%xmm3,%xmm0 )
++
++	vbroadcastss	  0 * SIZE(BO), %xmm2
++	vbroadcastss	  1 * SIZE(BO), %xmm3
++	VFMADD231PS_(  	%xmm12,%xmm2,%xmm0  )
++	VFMADD231PS_(  	%xmm14,%xmm3,%xmm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 4*SIZE, AO 
++	decq	%rax 
++.endm
++
++.macro SAVE4x6
++
++	vbroadcastss	ALPHA, %xmm0
++
++	vmulps	%xmm0 , %xmm4 , %xmm4
++	vmulps	%xmm0 , %xmm6 , %xmm6
++	vmulps	%xmm0 , %xmm8 , %xmm8
++	vmulps	%xmm0 , %xmm10, %xmm10
++	vmulps	%xmm0 , %xmm12, %xmm12
++	vmulps	%xmm0 , %xmm14, %xmm14
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %xmm4,%xmm4
++	vaddps 	        (CO1, LDC), %xmm6,%xmm6
++	vaddps 	        (CO1, LDC,2), %xmm8,%xmm8
++	vaddps 	        (CO2), %xmm10,%xmm10
++	vaddps 	        (CO2, LDC), %xmm12,%xmm12
++	vaddps 	        (CO2, LDC,2), %xmm14,%xmm14
++
++#endif
++
++	vmovups	%xmm4 ,  	(CO1)
++	vmovups	%xmm6 ,  	(CO1, LDC)
++	vmovups	%xmm8 ,  	(CO1, LDC,2)
++	vmovups	%xmm10,  	(CO2)
++	vmovups	%xmm12,  	(CO2, LDC)
++	vmovups	%xmm14,  	(CO2, LDC,2)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL2x6_SUB
++	vmovss 	-16 * SIZE(AO), %xmm0
++	vmovss 	-15 * SIZE(AO), %xmm1
++	vmovss	 -4 * SIZE(BO), %xmm2
++	vmovss	 -3 * SIZE(BO), %xmm3
++
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231SS_(  	%xmm5,%xmm2,%xmm1 )
++	VFMADD231SS_(  	%xmm6,%xmm3,%xmm0 )
++	VFMADD231SS_(  	%xmm7,%xmm3,%xmm1 )
++
++	vmovss	 -2 * SIZE(BO), %xmm2
++	vmovss	 -1 * SIZE(BO), %xmm3
++	VFMADD231SS_(  	%xmm8,%xmm2,%xmm0  )
++	VFMADD231SS_(  	%xmm9,%xmm2,%xmm1  )
++	VFMADD231SS_(  	%xmm10,%xmm3,%xmm0 )
++	VFMADD231SS_(  	%xmm11,%xmm3,%xmm1 )
++
++	vmovss	  0 * SIZE(BO), %xmm2
++	vmovss	  1 * SIZE(BO), %xmm3
++	VFMADD231SS_(  	%xmm12,%xmm2,%xmm0  )
++	VFMADD231SS_(  	%xmm13,%xmm2,%xmm1  )
++	VFMADD231SS_(  	%xmm14,%xmm3,%xmm0 )
++	VFMADD231SS_(  	%xmm15,%xmm3,%xmm1 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 2*SIZE, AO 
++	decq	%rax 
++.endm
++
++.macro SAVE2x6
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++	vmulss	%xmm0 , %xmm5 , %xmm5
++	vmulss	%xmm0 , %xmm6 , %xmm6
++	vmulss	%xmm0 , %xmm7 , %xmm7
++	vmulss	%xmm0 , %xmm8 , %xmm8
++	vmulss	%xmm0 , %xmm9 , %xmm9
++	vmulss	%xmm0 , %xmm10, %xmm10
++	vmulss	%xmm0 , %xmm11, %xmm11
++	vmulss	%xmm0 , %xmm12, %xmm12
++	vmulss	%xmm0 , %xmm13, %xmm13
++	vmulss	%xmm0 , %xmm14, %xmm14
++	vmulss	%xmm0 , %xmm15, %xmm15
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++	vaddss  1 * SIZE(CO1), %xmm5,%xmm5
++
++	vaddss 	        (CO1, LDC), %xmm6,%xmm6
++	vaddss  1 * SIZE(CO1, LDC), %xmm7,%xmm7
++
++	vaddss 	        (CO1, LDC,2), %xmm8,%xmm8
++	vaddss  1 * SIZE(CO1, LDC,2), %xmm9,%xmm9
++
++	vaddss 	        (CO2), %xmm10,%xmm10
++	vaddss  1 * SIZE(CO2), %xmm11,%xmm11
++
++	vaddss 	        (CO2, LDC), %xmm12,%xmm12
++	vaddss  1 * SIZE(CO2, LDC), %xmm13,%xmm13
++
++	vaddss 	        (CO2, LDC,2), %xmm14,%xmm14
++	vaddss  1 * SIZE(CO2, LDC,2), %xmm15,%xmm15
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++	vmovss	%xmm5 , 1 * SIZE(CO1)
++
++	vmovss	%xmm6 ,  	(CO1, LDC)
++	vmovss	%xmm7 , 1 * SIZE(CO1, LDC)
++
++	vmovss	%xmm8 ,  	(CO1, LDC,2)
++	vmovss	%xmm9 , 1 * SIZE(CO1, LDC,2)
++
++	vmovss	%xmm10,  	(CO2)
++	vmovss	%xmm11, 1 * SIZE(CO2)
++
++	vmovss	%xmm12,  	(CO2, LDC)
++	vmovss	%xmm13, 1 * SIZE(CO2, LDC)
++
++	vmovss	%xmm14,  	(CO2, LDC,2)
++	vmovss	%xmm15, 1 * SIZE(CO2, LDC,2)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL1x6_SUB
++	vmovss 	-16 * SIZE(AO), %xmm0
++	vmovss	 -4 * SIZE(BO), %xmm2
++	vmovss	 -3 * SIZE(BO), %xmm3
++
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231SS_(  	%xmm6,%xmm3,%xmm0 )
++
++	vmovss	 -2 * SIZE(BO), %xmm2
++	vmovss	 -1 * SIZE(BO), %xmm3
++	VFMADD231SS_(  	%xmm8,%xmm2,%xmm0  )
++	VFMADD231SS_(  	%xmm10,%xmm3,%xmm0 )
++
++	vmovss	  0 * SIZE(BO), %xmm2
++	vmovss	  1 * SIZE(BO), %xmm3
++	VFMADD231SS_(  	%xmm12,%xmm2,%xmm0  )
++	VFMADD231SS_(  	%xmm14,%xmm3,%xmm0 )
++
++	addq	$ 6*SIZE, BO 
++	addq	$ 1*SIZE, AO 
++	decq	%rax 
++.endm
++
++.macro SAVE1x6
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++	vmulss	%xmm0 , %xmm6 , %xmm6
++	vmulss	%xmm0 , %xmm8 , %xmm8
++	vmulss	%xmm0 , %xmm10, %xmm10
++	vmulss	%xmm0 , %xmm12, %xmm12
++	vmulss	%xmm0 , %xmm14, %xmm14
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++	vaddss 	        (CO1, LDC), %xmm6,%xmm6
++	vaddss 	        (CO1, LDC,2), %xmm8,%xmm8
++	vaddss 	        (CO2), %xmm10,%xmm10
++	vaddss 	        (CO2, LDC), %xmm12,%xmm12
++	vaddss 	        (CO2, LDC,2), %xmm14,%xmm14
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++	vmovss	%xmm6 ,  	(CO1, LDC)
++	vmovss	%xmm8 ,  	(CO1, LDC,2)
++	vmovss	%xmm10,  	(CO2)
++	vmovss	%xmm12,  	(CO2, LDC)
++	vmovss	%xmm14,  	(CO2, LDC,2)
++
++.endm
++
++
++/*******************************************************************************************/
++
++
++/*******************************************************************************************
++* 4 lines of N
++*******************************************************************************************/
++
++.macro KERNEL16x4_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %zmm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %zmm2
++	vbroadcastss	 -3 * SIZE(BO, BI, SIZE), %zmm3
++	VFMADD231PS_(  	%zmm4,%zmm2,%zmm0 )
++	VFMADD231PS_(  	%zmm6,%zmm3,%zmm0 )
++	vbroadcastss	 -2 * SIZE(BO, BI, SIZE), %zmm2
++	vbroadcastss	 -1 * SIZE(BO, BI, SIZE), %zmm3
++	VFMADD231PS_(  	%zmm8,%zmm2,%zmm0  )
++	VFMADD231PS_(  	%zmm10,%zmm3,%zmm0 )
++	addq	$ 4 , BI	
++	addq	$ 16, %rax 
++.endm
++
++.macro SAVE16x4
++
++	vbroadcastss	ALPHA, %zmm0
++
++	vmulps	%zmm0 , %zmm4 , %zmm4
++	vmulps	%zmm0 , %zmm6 , %zmm6
++	vmulps	%zmm0 , %zmm8 , %zmm8
++	vmulps	%zmm0 , %zmm10, %zmm10
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %zmm4,%zmm4
++
++	vaddps 	        (CO1, LDC), %zmm6,%zmm6
++
++	vaddps 	        (CO2), %zmm8,%zmm8
++
++	vaddps 	        (CO2, LDC), %zmm10,%zmm10
++
++#endif
++
++	vmovups	%zmm4 ,  	(CO1)
++
++	vmovups	%zmm6 ,  	(CO1, LDC)
++
++	vmovups	%zmm8 ,  	(CO2)
++
++	vmovups	%zmm10,  	(CO2, LDC)
++
++	prefetcht0	64(CO1)
++	prefetcht0	64(CO1, LDC)
++	prefetcht0	64(CO2)
++	prefetcht0	64(CO2, LDC)
++
++.endm
++
++
++
++/*******************************************************************************************/
++
++.macro KERNEL8x4_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %ymm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %ymm2
++	vbroadcastss	 -3 * SIZE(BO, BI, SIZE), %ymm3
++	VFMADD231PS_(  	%ymm4,%ymm2,%ymm0 )
++	VFMADD231PS_(  	%ymm6,%ymm3,%ymm0 )
++	vbroadcastss	 -2 * SIZE(BO, BI, SIZE), %ymm2
++	vbroadcastss	 -1 * SIZE(BO, BI, SIZE), %ymm3
++	VFMADD231PS_(  	%ymm8,%ymm2,%ymm0  )
++	VFMADD231PS_(  	%ymm10,%ymm3,%ymm0 )
++	addq	$ 4 , BI	
++	addq	$ 8 , %rax 
++.endm
++
++.macro SAVE8x4
++
++	vbroadcastss	ALPHA, %ymm0
++
++	vmulps	%ymm0 , %ymm4 , %ymm4
++	vmulps	%ymm0 , %ymm6 , %ymm6
++	vmulps	%ymm0 , %ymm8 , %ymm8
++	vmulps	%ymm0 , %ymm10, %ymm10
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %ymm4,%ymm4
++	vaddps 	        (CO1, LDC), %ymm6,%ymm6
++	vaddps 	        (CO2), %ymm8,%ymm8
++	vaddps 	        (CO2, LDC), %ymm10,%ymm10
++
++#endif
++
++	vmovups	%ymm4 ,  	(CO1)
++	vmovups	%ymm6 ,  	(CO1, LDC)
++	vmovups	%ymm8 ,  	(CO2)
++	vmovups	%ymm10,  	(CO2, LDC)
++
++.endm
++
++
++
++/*******************************************************************************************/
++
++.macro KERNEL4x4_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	vbroadcastss	 -3 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231PS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231PS_(  	%xmm6,%xmm3,%xmm0 )
++	vbroadcastss	 -2 * SIZE(BO, BI, SIZE), %xmm2
++	vbroadcastss	 -1 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231PS_(  	%xmm8,%xmm2,%xmm0  )
++	VFMADD231PS_(  	%xmm10,%xmm3,%xmm0 )
++	addq	$ 4 , BI	
++	addq	$ 4 , %rax 
++.endm
++
++.macro SAVE4x4
++
++	vbroadcastss	ALPHA, %xmm0
++
++	vmulps	%xmm0 , %xmm4 , %xmm4
++	vmulps	%xmm0 , %xmm6 , %xmm6
++	vmulps	%xmm0 , %xmm8 , %xmm8
++	vmulps	%xmm0 , %xmm10, %xmm10
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %xmm4,%xmm4
++	vaddps 	        (CO1, LDC), %xmm6,%xmm6
++	vaddps 	        (CO2), %xmm8,%xmm8
++	vaddps 	        (CO2, LDC), %xmm10,%xmm10
++
++#endif
++
++	vmovups	%xmm4 ,  	(CO1)
++	vmovups	%xmm6 ,  	(CO1, LDC)
++	vmovups	%xmm8 ,  	(CO2)
++	vmovups	%xmm10,  	(CO2, LDC)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL2x4_SUB
++	vmovss 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vmovss 	-15 * SIZE(AO, %rax, SIZE), %xmm1
++	vmovss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	vmovss	 -3 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231SS_(  	%xmm5,%xmm2,%xmm1 )
++	VFMADD231SS_(  	%xmm6,%xmm3,%xmm0 )
++	VFMADD231SS_(  	%xmm7,%xmm3,%xmm1 )
++	vmovss	 -2 * SIZE(BO, BI, SIZE), %xmm2
++	vmovss	 -1 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231SS_(  	%xmm8,%xmm2,%xmm0  )
++	VFMADD231SS_(  	%xmm9,%xmm2,%xmm1  )
++	VFMADD231SS_(  	%xmm10,%xmm3,%xmm0 )
++	VFMADD231SS_(  	%xmm11,%xmm3,%xmm1 )
++	addq	$ 4 , BI	
++	addq	$ 2, %rax 
++.endm
++
++.macro SAVE2x4
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++	vmulss	%xmm0 , %xmm5 , %xmm5
++	vmulss	%xmm0 , %xmm6 , %xmm6
++	vmulss	%xmm0 , %xmm7 , %xmm7
++	vmulss	%xmm0 , %xmm8 , %xmm8
++	vmulss	%xmm0 , %xmm9 , %xmm9
++	vmulss	%xmm0 , %xmm10, %xmm10
++	vmulss	%xmm0 , %xmm11, %xmm11
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++	vaddss  1 * SIZE(CO1), %xmm5,%xmm5
++
++	vaddss 	        (CO1, LDC), %xmm6,%xmm6
++	vaddss  1 * SIZE(CO1, LDC), %xmm7,%xmm7
++
++	vaddss 	        (CO2), %xmm8,%xmm8
++	vaddss  1 * SIZE(CO2), %xmm9,%xmm9
++
++	vaddss 	        (CO2, LDC), %xmm10,%xmm10
++	vaddss  1 * SIZE(CO2, LDC), %xmm11,%xmm11
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++	vmovss	%xmm5 , 1 * SIZE(CO1)
++
++	vmovss	%xmm6 ,  	(CO1, LDC)
++	vmovss	%xmm7 , 1 * SIZE(CO1, LDC)
++
++	vmovss	%xmm8 ,  	(CO2)
++	vmovss	%xmm9 , 1 * SIZE(CO2)
++
++	vmovss	%xmm10,  	(CO2, LDC)
++	vmovss	%xmm11, 1 * SIZE(CO2, LDC)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL1x4_SUB
++	vmovss 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vmovss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	vmovss	 -3 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231SS_(  	%xmm6,%xmm3,%xmm0 )
++	vmovss	 -2 * SIZE(BO, BI, SIZE), %xmm2
++	vmovss	 -1 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231SS_(  	%xmm8,%xmm2,%xmm0  )
++	VFMADD231SS_(  	%xmm10,%xmm3,%xmm0 )
++	addq	$ 4 , BI	
++	addq	$ 1, %rax 
++.endm
++
++.macro SAVE1x4
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++	vmulss	%xmm0 , %xmm6 , %xmm6
++	vmulss	%xmm0 , %xmm8 , %xmm8
++	vmulss	%xmm0 , %xmm10, %xmm10
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++	vaddss 	        (CO1, LDC), %xmm6,%xmm6
++	vaddss 	        (CO2), %xmm8,%xmm8
++	vaddss 	        (CO2, LDC), %xmm10,%xmm10
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++	vmovss	%xmm6 ,  	(CO1, LDC)
++	vmovss	%xmm8 ,  	(CO2)
++	vmovss	%xmm10,  	(CO2, LDC)
++
++.endm
++
++
++/*******************************************************************************************/
++
++/*******************************************************************************************
++* 2 lines of N
++*******************************************************************************************/
++
++.macro KERNEL16x2_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %zmm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %zmm2
++	vbroadcastss	 -3 * SIZE(BO, BI, SIZE), %zmm3
++	VFMADD231PS_(  	%zmm4,%zmm2,%zmm0 )
++	VFMADD231PS_(  	%zmm6,%zmm3,%zmm0 )
++	addq	$ 2 , BI	
++	addq	$ 16, %rax 
++.endm
++
++.macro SAVE16x2
++
++	vbroadcastss	ALPHA, %zmm0
++
++	vmulps	%zmm0 , %zmm4 , %zmm4
++	vmulps	%zmm0 , %zmm6 , %zmm6
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %zmm4,%zmm4
++
++	vaddps 	        (CO1, LDC), %zmm6,%zmm6
++
++#endif
++
++	vmovups	%zmm4 ,  	(CO1)
++
++	vmovups	%zmm6 ,  	(CO1, LDC)
++
++.endm
++
++
++
++/*******************************************************************************************/
++
++.macro KERNEL8x2_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %ymm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %ymm2
++	vbroadcastss	 -3 * SIZE(BO, BI, SIZE), %ymm3
++	VFMADD231PS_(  	%ymm4,%ymm2,%ymm0 )
++	VFMADD231PS_(  	%ymm6,%ymm3,%ymm0 )
++	addq	$ 2 , BI	
++	addq	$ 8 , %rax 
++.endm
++
++.macro SAVE8x2
++
++	vbroadcastss	ALPHA, %ymm0
++
++	vmulps	%ymm0 , %ymm4 , %ymm4
++	vmulps	%ymm0 , %ymm6 , %ymm6
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %ymm4,%ymm4
++	vaddps 	        (CO1, LDC), %ymm6,%ymm6
++
++#endif
++
++	vmovups	%ymm4 ,  	(CO1)
++	vmovups	%ymm6 ,  	(CO1, LDC)
++
++.endm
++
++
++
++/*******************************************************************************************/
++
++.macro KERNEL4x2_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	vbroadcastss	 -3 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231PS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231PS_(  	%xmm6,%xmm3,%xmm0 )
++	addq	$ 2 , BI	
++	addq	$ 4 , %rax 
++.endm
++
++.macro SAVE4x2
++
++	vbroadcastss	ALPHA, %xmm0
++
++	vmulps	%xmm0 , %xmm4 , %xmm4
++	vmulps	%xmm0 , %xmm6 , %xmm6
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %xmm4,%xmm4
++	vaddps 	        (CO1, LDC), %xmm6,%xmm6
++
++#endif
++
++	vmovups	%xmm4 ,  	(CO1)
++	vmovups	%xmm6 ,  	(CO1, LDC)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL2x2_SUB
++	vmovss 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vmovss 	-15 * SIZE(AO, %rax, SIZE), %xmm1
++	vmovss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	vmovss	 -3 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231SS_(  	%xmm5,%xmm2,%xmm1 )
++	VFMADD231SS_(  	%xmm6,%xmm3,%xmm0 )
++	VFMADD231SS_(  	%xmm7,%xmm3,%xmm1 )
++	addq	$ 2 , BI	
++	addq	$ 2, %rax 
++.endm
++
++.macro SAVE2x2
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++	vmulss	%xmm0 , %xmm5 , %xmm5
++	vmulss	%xmm0 , %xmm6 , %xmm6
++	vmulss	%xmm0 , %xmm7 , %xmm7
++
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++	vaddss  1 * SIZE(CO1), %xmm5,%xmm5
++
++	vaddss 	        (CO1, LDC), %xmm6,%xmm6
++	vaddss  1 * SIZE(CO1, LDC), %xmm7,%xmm7
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++	vmovss	%xmm5 , 1 * SIZE(CO1)
++
++	vmovss	%xmm6 ,  	(CO1, LDC)
++	vmovss	%xmm7 , 1 * SIZE(CO1, LDC)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL1x2_SUB
++	vmovss 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vmovss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	vmovss	 -3 * SIZE(BO, BI, SIZE), %xmm3
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231SS_(  	%xmm6,%xmm3,%xmm0 )
++	addq	$ 2 , BI	
++	addq	$ 1, %rax 
++.endm
++
++.macro SAVE1x2
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++	vmulss	%xmm0 , %xmm6 , %xmm6
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++	vaddss 	        (CO1, LDC), %xmm6,%xmm6
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++	vmovss	%xmm6 ,  	(CO1, LDC)
++
++.endm
++
++
++/*******************************************************************************************/
++
++/*******************************************************************************************
++* 1 line of N
++*******************************************************************************************/
++
++.macro KERNEL16x1_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %zmm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %zmm2
++	VFMADD231PS_(  	%zmm4,%zmm2,%zmm0 )
++	addq	$ 1 , BI	
++	addq	$ 16, %rax 
++.endm
++
++.macro SAVE16x1
++
++	vbroadcastss	ALPHA, %zmm0
++
++	vmulps	%zmm0 , %zmm4 , %zmm4
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %zmm4,%zmm4
++
++#endif
++
++	vmovups	%zmm4 ,  	(CO1)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL8x1_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %ymm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %ymm2
++	VFMADD231PS_(  	%ymm4,%ymm2,%ymm0 )
++	addq	$ 1 , BI	
++	addq	$ 8 , %rax 
++.endm
++
++.macro SAVE8x1
++
++	vbroadcastss	ALPHA, %ymm0
++
++	vmulps	%ymm0 , %ymm4 , %ymm4
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %ymm4,%ymm4
++
++#endif
++
++	vmovups	%ymm4 ,  	(CO1)
++
++.endm
++
++
++
++/*******************************************************************************************/
++
++.macro KERNEL4x1_SUB
++	vmovups 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vbroadcastss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	VFMADD231PS_(  	%xmm4,%xmm2,%xmm0 )
++	addq	$ 1 , BI	
++	addq	$ 4 , %rax 
++.endm
++
++.macro SAVE4x1
++
++	vbroadcastss	ALPHA, %xmm0
++
++	vmulps	%xmm0 , %xmm4 , %xmm4
++
++#if !defined(TRMMKERNEL)
++
++	vaddps 	        (CO1), %xmm4,%xmm4
++
++#endif
++
++	vmovups	%xmm4 ,  	(CO1)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL2x1_SUB
++	vmovss 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vmovss 	-15 * SIZE(AO, %rax, SIZE), %xmm1
++	vmovss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	VFMADD231SS_(  	%xmm5,%xmm2,%xmm1 )
++	addq	$ 1 , BI	
++	addq	$ 2 , %rax 
++.endm
++
++.macro SAVE2x1
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++	vmulss	%xmm0 , %xmm5 , %xmm5
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++	vaddss  1 * SIZE(CO1), %xmm5,%xmm5
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++	vmovss	%xmm5 , 1 * SIZE(CO1)
++
++.endm
++
++
++/*******************************************************************************************/
++
++.macro KERNEL1x1_SUB
++	vmovss 	-16 * SIZE(AO, %rax, SIZE), %xmm0
++	vmovss	 -4 * SIZE(BO, BI, SIZE), %xmm2
++	VFMADD231SS_(  	%xmm4,%xmm2,%xmm0 )
++	addq	$ 1 , BI	
++	addq	$ 1 , %rax 
++.endm
++
++.macro SAVE1x1
++
++	vmovss	ALPHA, %xmm0
++
++	vmulss	%xmm0 , %xmm4 , %xmm4
++
++#if !defined(TRMMKERNEL)
++
++	vaddss 	        (CO1), %xmm4,%xmm4
++
++#endif
++
++	vmovss	%xmm4 ,  	(CO1)
++
++.endm
++
++
++/*******************************************************************************************/
++
++#if !defined(TRMMKERNEL)
++
++/*************************************************************************************
++* GEMM Kernel
++*************************************************************************************/
++
++
++	PROLOGUE
++	PROFCODE
++	
++	subq	$STACKSIZE, %rsp
++	movq	%rbx,   (%rsp)
++	movq	%rbp,  8(%rsp)
++	movq	%r12, 16(%rsp)
++	movq	%r13, 24(%rsp)
++	movq	%r14, 32(%rsp)
++	movq	%r15, 40(%rsp)
++
++	vzeroupper
++
++#ifdef WINDOWS_ABI
++	movq	%rdi,    48(%rsp)
++	movq	%rsi,    56(%rsp)
++	movups	%xmm6,   64(%rsp)
++	movups	%xmm7,   80(%rsp)
++	movups	%xmm8,   96(%rsp)
++	movups	%xmm9,  112(%rsp)
++	movups	%xmm10, 128(%rsp)
++	movups	%xmm11, 144(%rsp)
++	movups	%xmm12, 160(%rsp)
++	movups	%xmm13, 176(%rsp)
++	movups	%xmm14, 192(%rsp)
++	movups	%xmm15, 208(%rsp)
++
++	movq	ARG1,      OLD_M
++	movq	ARG2,      OLD_N
++	movq	ARG3,      OLD_K
++	movq	OLD_A,     A
++	movq	OLD_B,     B
++	movq	OLD_C,     C
++	movq	OLD_LDC,   LDC
++#ifdef TRMMKERNEL
++	vmovsd	OLD_OFFSET, %xmm12
++#endif
++	vmovaps	%xmm3, %xmm0
++
++#else
++	movq	STACKSIZE +  8(%rsp), LDC
++#ifdef TRMMKERNEL
++	movsd	STACKSIZE + 16(%rsp), %xmm12
++#endif
++
++#endif
++
++	movq    %rsp, SP      # save old stack
++        subq    $128 + L_BUFFER_SIZE, %rsp
++        andq    $-4096, %rsp    # align stack
++
++        STACK_TOUCH
++
++	cmpq	$0, OLD_M
++	je	.L999
++
++	cmpq	$0, OLD_N
++	je	.L999
++
++	cmpq	$0, OLD_K
++	je	.L999
++
++	movq	OLD_M, M
++	movq	OLD_N, N
++	movq	OLD_K, K
++
++	vmovss	 %xmm0, ALPHA
++
++	salq	$BASE_SHIFT, LDC
++
++	movq    N, %rax
++        xorq    %rdx, %rdx
++        movq    $12,  %rdi
++        divq    %rdi                    //    N / 12
++        movq    %rax, Ndiv6             //    N / 12
++        movq    %rdx, Nmod6             //    N % 12
++
++	movq	Ndiv6,  J
++	cmpq	$0, J
++	je	.L4_00
++	ALIGN_4
++
++
++/*******************************************************************************************/
++
++.L6_01:
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	salq	$2, %rax		// 4 values of B
++        leaq    (B, %rax,4), BO2
++        movq    BO2, B                  // next offset of B
++        movq    K, %rax
++
++	ALIGN_4
++
++
++.L6_02c:
++
++	vmovups	(BO1), %xmm0
++	vmovsd	(BO2), %xmm1
++	vmovups	%xmm0, (BO)
++	vmovsd	%xmm1, 4*SIZE(BO)
++	addq	$ 4*SIZE,BO1
++	addq	$ 4*SIZE,BO2
++	addq	$ 6*SIZE,BO
++	decq	%rax
++	jnz	.L6_02c
++
++
++.L6_10:
++	movq	 C, CO1
++	leaq	(C,   LDC, 2), CO2	
++	leaq	(CO2, LDC, 1), CO2		// co2 = c + 3 * ldc
++	leaq	(C,   LDC, 4), C	
++	leaq	(C,   LDC, 2), C		// c = c + 6 * ldc
++
++	movq	A, AO		 	// aoffset = a
++	addq	$ 16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L6_20
++
++	ALIGN_4
++
++.L6_11:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L6_16
++
++	ALIGN_4
++
++.L6_12:
++
++	KERNEL16x6_SUB4
++
++	KERNEL16x6_SUB4
++
++	je	.L6_16
++
++	KERNEL16x6_SUB4
++
++	KERNEL16x6_SUB4
++
++	je	.L6_16
++
++	jmp	.L6_12
++	ALIGN_4
++
++.L6_16:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L6_19
++
++	ALIGN_4
++
++.L6_17:
++
++	KERNEL16x6_SUB
++
++	jnz	.L6_17
++	ALIGN_4
++
++
++.L6_19:
++
++	SAVE16x6
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	addq	$16 * SIZE, CO2		# coffset += 16
++	decq	I			# i --
++	jg	.L6_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L6_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L6_60		// to next 6 lines of N
++
++	testq	$8, M		
++	jz	.L6_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L6_20_1:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L6_20_6
++
++	ALIGN_4
++
++.L6_20_2:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	je	.L6_20_6
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	je	.L6_20_6
++
++	jmp	.L6_20_2
++	ALIGN_4
++
++.L6_20_6:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L6_20_9
++
++	ALIGN_4
++
++.L6_20_7:
++
++	KERNEL8x6_SUB
++
++	jnz	.L6_20_7
++	ALIGN_4
++
++
++.L6_20_9:
++
++	SAVE8x6
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	addq	$8 * SIZE, CO2		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L6_21pre:
++
++	testq	$4, M		
++	jz	.L6_30
++	ALIGN_4
++
++.L6_21:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L6_26
++
++	ALIGN_4
++
++.L6_22:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	je	.L6_26
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	je	.L6_26
++
++	jmp	.L6_22
++	ALIGN_4
++
++.L6_26:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L6_29
++
++	ALIGN_4
++
++.L6_27:
++
++	KERNEL4x6_SUB
++
++	jnz	.L6_27
++	ALIGN_4
++
++
++.L6_29:
++
++	SAVE4x6
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	addq	$4 * SIZE, CO2		# coffset += 4
++	ALIGN_4
++	
++
++.L6_30:
++	testq	$2, M		
++	jz	.L6_40
++
++	ALIGN_4
++
++.L6_31:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L6_36
++
++	ALIGN_4
++
++.L6_32:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	je	.L6_36
++
++	prefetcht0	A_PR1(AO)
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	je	.L6_36
++
++	jmp	.L6_32
++	ALIGN_4
++
++.L6_36:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L6_39
++
++	ALIGN_4
++
++.L6_37:
++
++	KERNEL2x6_SUB
++
++	jnz	.L6_37
++	ALIGN_4
++
++
++.L6_39:
++
++	SAVE2x6
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	addq	$2 * SIZE, CO2		# coffset += 2
++	ALIGN_4
++
++.L6_40:
++	testq	$1, M		
++	jz	.L6_60		// to next 4 lines of N
++
++	ALIGN_4
++
++.L6_41:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L6_46
++
++	ALIGN_4
++
++.L6_42:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	je	.L6_46
++
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	je	.L6_46
++
++	jmp	.L6_42
++	ALIGN_4
++
++.L6_46:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L6_49
++
++	ALIGN_4
++
++.L6_47:
++
++	KERNEL1x6_SUB
++
++	jnz	.L6_47
++	ALIGN_4
++
++
++.L6_49:
++
++	SAVE1x6
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	addq	$1 * SIZE, CO2		# coffset += 1
++	ALIGN_4
++	
++
++
++
++	
++.L6_60:
++
++
++/*******************************************************************************************/
++
++
++.L7_01:
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	salq	$2, %rax		// 4 values of B
++        leaq    (B, %rax,4), BO2
++        movq    K, %rax
++
++	ALIGN_4
++
++
++.L7_02c:
++
++	vmovsd	2*SIZE(BO1), %xmm0
++	vmovups	      (BO2), %xmm1
++	vmovsd	%xmm0, (BO)
++	vmovups	%xmm1, 2*SIZE(BO)
++	addq	$ 4*SIZE,BO1
++	addq	$ 4*SIZE,BO2
++	addq	$ 6*SIZE,BO
++	decq	%rax
++	jnz	.L7_02c
++
++        movq    BO2, B                  // next offset of B
++
++.L7_10:
++	movq	 C, CO1
++	leaq	(C,   LDC, 2), CO2	
++	leaq	(CO2, LDC, 1), CO2		// co2 = c + 3 * ldc
++	leaq	(C,   LDC, 4), C	
++	leaq	(C,   LDC, 2), C		// c = c + 6 * ldc
++
++	movq	A, AO		 	// aoffset = a
++	addq	$ 16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L7_20
++
++	ALIGN_4
++
++.L7_11:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L7_16
++
++	ALIGN_4
++
++.L7_12:
++
++	KERNEL16x6_SUB4
++
++	KERNEL16x6_SUB4
++
++	je	.L7_16
++
++	KERNEL16x6_SUB4
++
++	KERNEL16x6_SUB4
++
++	je	.L7_16
++
++	jmp	.L7_12
++	ALIGN_4
++
++.L7_16:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L7_19
++
++	ALIGN_4
++
++.L7_17:
++
++	KERNEL16x6_SUB
++
++	jnz	.L7_17
++	ALIGN_4
++
++
++.L7_19:
++
++	SAVE16x6
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	addq	$16 * SIZE, CO2		# coffset += 16
++	decq	I			# i --
++	jg	.L7_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L7_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L7_60		// to next 6 lines of N
++
++	testq	$8, M		
++	jz	.L7_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L7_20_1:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L7_20_6
++
++	ALIGN_4
++
++.L7_20_2:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	je	.L7_20_6
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++	prefetcht0	A_PR1(AO)
++	KERNEL8x6_SUB
++	KERNEL8x6_SUB
++
++	je	.L7_20_6
++
++	jmp	.L7_20_2
++	ALIGN_4
++
++.L7_20_6:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L7_20_9
++
++	ALIGN_4
++
++.L7_20_7:
++
++	KERNEL8x6_SUB
++
++	jnz	.L7_20_7
++	ALIGN_4
++
++
++.L7_20_9:
++
++	SAVE8x6
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	addq	$8 * SIZE, CO2		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L7_21pre:
++
++	testq	$4, M		
++	jz	.L7_30
++	ALIGN_4
++
++.L7_21:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L7_26
++
++	ALIGN_4
++
++.L7_22:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	je	.L7_26
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	prefetcht0	A_PR1(AO)
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++	KERNEL4x6_SUB
++
++	je	.L7_26
++
++	jmp	.L7_22
++	ALIGN_4
++
++.L7_26:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L7_29
++
++	ALIGN_4
++
++.L7_27:
++
++	KERNEL4x6_SUB
++
++	jnz	.L7_27
++	ALIGN_4
++
++
++.L7_29:
++
++	SAVE4x6
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	addq	$4 * SIZE, CO2		# coffset += 4
++	ALIGN_4
++	
++
++.L7_30:
++	testq	$2, M		
++	jz	.L7_40
++
++	ALIGN_4
++
++.L7_31:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L7_36
++
++	ALIGN_4
++
++.L7_32:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	je	.L7_36
++
++	prefetcht0	A_PR1(AO)
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++	KERNEL2x6_SUB
++
++	je	.L7_36
++
++	jmp	.L7_32
++	ALIGN_4
++
++.L7_36:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L7_39
++
++	ALIGN_4
++
++.L7_37:
++
++	KERNEL2x6_SUB
++
++	jnz	.L7_37
++	ALIGN_4
++
++
++.L7_39:
++
++	SAVE2x6
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	addq	$2 * SIZE, CO2		# coffset += 2
++	ALIGN_4
++
++.L7_40:
++	testq	$1, M		
++	jz	.L7_60		// to next 4 lines of N
++
++	ALIGN_4
++
++.L7_41:
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++
++	vzeroall
++
++        movq    K, %rax
++
++	andq	$-8, %rax
++	je	.L7_46
++
++	ALIGN_4
++
++.L7_42:
++
++	prefetcht0	A_PR1(AO)
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	je	.L7_46
++
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++	KERNEL1x6_SUB
++
++	je	.L7_46
++
++	jmp	.L7_42
++	ALIGN_4
++
++.L7_46:
++        movq    K, %rax
++
++	andq	$7, %rax		# if (k & 1)
++	je .L7_49
++
++	ALIGN_4
++
++.L7_47:
++
++	KERNEL1x6_SUB
++
++	jnz	.L7_47
++	ALIGN_4
++
++
++.L7_49:
++
++	SAVE1x6
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	addq	$1 * SIZE, CO2		# coffset += 1
++	ALIGN_4
++	
++
++
++
++	
++.L7_60:
++
++	decq	J			// j --
++	jg	.L6_01			// next 12 lines of N
++
++
++
++
++/*******************************************************************************************/
++.L4_00:
++
++ 	movq    Nmod6,  J
++        sarq    $2, J           // j = j / 4
++        cmpq    $ 0, J
++        je      .L2_00
++        ALIGN_4
++
++
++.L4_01:
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	sarq	$2, %rax		// K / 4
++	jz	.L4_01b
++	ALIGN_4
++
++
++.L4_01a:
++        prefetcht0 512(BO1)
++        prefetchw  512(BO)
++
++	vmovups	       (BO1), %xmm0
++	vmovups	 4*SIZE(BO1), %xmm1
++	vmovups	 8*SIZE(BO1), %xmm2
++	vmovups	12*SIZE(BO1), %xmm3
++
++	vmovups	%xmm0,       (BO)
++	vmovups	%xmm1, 4*SIZE(BO)
++	vmovups	%xmm2, 8*SIZE(BO)
++	vmovups	%xmm3,12*SIZE(BO)
++
++	addq	$ 16*SIZE,BO1
++	addq	$ 16*SIZE,BO
++	decq	%rax
++	jnz	.L4_01a
++
++
++.L4_01b:
++
++        movq    K, %rax
++        andq    $3, %rax                // K % 4
++        jz      .L4_02d
++        ALIGN_4
++
++.L4_02c:
++
++	vmovups	(BO1), %xmm0
++	vmovups	%xmm0, (BO)
++	addq	$ 4*SIZE,BO1
++	addq	$ 4*SIZE,BO
++	decq	%rax
++	jnz	.L4_02c
++
++.L4_02d:
++
++	movq	BO1, B			// next offset of B
++
++.L4_10:
++	movq	 C, CO1
++	leaq	(C, LDC, 2), CO2	
++	leaq	(C, LDC, 4), C		// c += 4 * ldc
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        movq    OFFSET, %rax
++        movq    %rax, KK
++#endif
++	
++	movq	A, AO		 	// aoffset = a
++	addq	$ 16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L4_20
++
++	ALIGN_4
++
++.L4_11:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             	// first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $16, %rax	// number of values in AO
++#else
++        addq    $4, %rax	// number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L4_16
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4) , BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_12:
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	je	.L4_16
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	je	.L4_16
++
++	jmp	.L4_12
++	ALIGN_4
++
++.L4_16:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_19
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_17:
++
++	KERNEL16x4_SUB
++
++	jl	.L4_17
++	ALIGN_4
++
++
++.L4_19:
++
++	SAVE16x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $16, KK				
++#endif
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	addq	$16 * SIZE, CO2		# coffset += 16
++	decq	I			# i --
++	jg	.L4_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L4_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L4_60		// to next 3 lines of N
++
++	testq	$8, M		
++	jz	.L4_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L4_20_1:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $8, %rax        // number of values in A
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L4_20_6
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_20_2:
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	je	.L4_20_6
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	je	.L4_20_6
++
++	jmp	.L4_20_2
++	ALIGN_4
++
++.L4_20_6:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_20_9
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_20_7:
++
++	KERNEL8x4_SUB
++
++	jl	.L4_20_7
++	ALIGN_4
++
++
++.L4_20_9:
++
++	SAVE8x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $8, KK
++#endif
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	addq	$8 * SIZE, CO2		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L4_21pre:
++
++	testq	$4, M		
++	jz	.L4_30
++	ALIGN_4
++
++.L4_21:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $4, %rax        // number of values in A
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L4_26
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_22:
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	je	.L4_26
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	je	.L4_26
++
++	jmp	.L4_22
++	ALIGN_4
++
++.L4_26:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_29
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_27:
++
++	KERNEL4x4_SUB
++
++	jl	.L4_27
++	ALIGN_4
++
++
++.L4_29:
++
++	SAVE4x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $4, KK
++#endif
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	addq	$4 * SIZE, CO2		# coffset += 4
++	ALIGN_4
++	
++
++.L4_30:
++	testq	$2, M		
++	jz	.L4_40
++
++	ALIGN_4
++
++.L4_31:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $2, %rax        // number of values in AO
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L4_36
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_32:
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	je	.L4_36
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	je	.L4_36
++
++	jmp	.L4_32
++	ALIGN_4
++
++.L4_36:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_39
++
++	movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++	
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_37:
++
++	KERNEL2x4_SUB
++
++	jl	.L4_37
++	ALIGN_4
++
++
++.L4_39:
++
++	SAVE2x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $2, KK
++#endif
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	addq	$2 * SIZE, CO2		# coffset += 2
++	ALIGN_4
++
++.L4_40:
++	testq	$1, M		
++	jz	.L4_60		// to next 4 lines of N
++
++	ALIGN_4
++
++.L4_41:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $1, %rax        // number of values in AO
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax
++	je	.L4_46
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_42:
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	je	.L4_46
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	je	.L4_46
++
++	jmp	.L4_42
++	ALIGN_4
++
++.L4_46:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_49
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_47:
++
++	KERNEL1x4_SUB
++
++	jl	.L4_47
++	ALIGN_4
++
++
++.L4_49:
++
++	SAVE1x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $1, KK
++#endif
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	addq	$1 * SIZE, CO2		# coffset += 1
++	ALIGN_4
++	
++
++
++
++	
++.L4_60:
++#if defined(TRMMKERNEL) && !defined(LEFT)
++        addq    $4, KK
++#endif
++
++	decq	J			// j --
++	jg	.L4_01			// next 4 lines of N
++
++
++
++/*******************************************************************************************/
++.L2_00:
++
++	movq	Nmod6, J		
++	andq	$3, J			// j % 4
++	je	.L999
++
++	movq	Nmod6, J		
++	andq	$2, J			// j % 4
++	je	.L1_0
++
++.L2_01:
++
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	sarq	$2, %rax		// K / 4
++	jz	.L2_01b
++	ALIGN_4
++
++.L2_01a:
++
++	vmovsd	      (BO1), %xmm0
++	vmovsd	2*SIZE(BO1), %xmm1
++	vmovsd	4*SIZE(BO1), %xmm2
++	vmovsd	6*SIZE(BO1), %xmm3
++
++	vmovsd	%xmm0,       (BO)
++	vmovsd	%xmm1, 2*SIZE(BO)
++	vmovsd	%xmm2, 4*SIZE(BO)
++	vmovsd	%xmm3, 6*SIZE(BO)
++
++	addq	$8*SIZE,BO1
++	addq	$8*SIZE,BO
++	decq	%rax
++	jnz	.L2_01a
++
++
++.L2_01b:
++
++        movq    K, %rax
++        andq    $3, %rax                // K % 4
++        jz      .L2_02d
++        ALIGN_4
++
++.L2_02c:
++
++	vmovsd 	(BO1), %xmm0
++	vmovsd 	%xmm0, (BO)
++	addq	$2*SIZE,BO1
++	addq	$2*SIZE,BO
++	decq	%rax
++	jnz	.L2_02c
++
++.L2_02d:
++
++	movq	BO1, B			// next offset of B
++
++.L2_10:
++	movq	C, CO1
++	leaq	(C, LDC, 2), C		// c += 2 * ldc
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        movq    OFFSET, %rax
++        movq    %rax, KK
++#endif
++	
++	movq	A, AO		 	// aoffset = a
++	addq	$16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L2_20
++
++	ALIGN_4
++
++.L2_11:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $16, %rax	// number of values in AO
++#else
++        addq    $2, %rax	// number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L2_16
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_12:
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	je	.L2_16
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	je	.L2_16
++
++	jmp	.L2_12
++	ALIGN_4
++
++.L2_16:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_19
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_17:
++
++	KERNEL16x2_SUB
++
++	jl	.L2_17
++	ALIGN_4
++
++
++.L2_19:
++
++	SAVE16x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $16, KK				
++#endif
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	decq	I			# i --
++	jg	.L2_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L2_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L2_60		// to next 2 lines of N
++
++	testq	$8, M		
++	jz	.L2_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L2_20_1:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $8, %rax        // number of values in A
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L2_20_6
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_20_2:
++
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	je	.L2_20_6
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	je	.L2_20_6
++
++	jmp	.L2_20_2
++	ALIGN_4
++
++.L2_20_6:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_20_9
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_20_7:
++
++	KERNEL8x2_SUB
++
++	jl	.L2_20_7
++	ALIGN_4
++
++
++.L2_20_9:
++
++	SAVE8x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $8, KK
++#endif
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L2_21pre:
++
++	testq	$4, M		
++	jz	.L2_30
++	ALIGN_4
++
++.L2_21:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $4, %rax        // number of values in A
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L2_26
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 1 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_22:
++
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	je	.L2_26
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	je	.L2_26
++
++	jmp	.L2_22
++	ALIGN_4
++
++.L2_26:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_29
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_27:
++
++	KERNEL4x2_SUB
++
++	jl	.L2_27
++	ALIGN_4
++
++
++.L2_29:
++
++	SAVE4x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $4, KK
++#endif
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	ALIGN_4
++	
++
++.L2_30:
++	testq	$2, M		
++	jz	.L2_40
++
++	ALIGN_4
++
++.L2_31:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $2, %rax        // number of values in AO
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L2_36
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_32:
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	je	.L2_36
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	je	.L2_36
++
++	jmp	.L2_32
++	ALIGN_4
++
++.L2_36:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_39
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++	
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_37:
++
++	KERNEL2x2_SUB
++
++	jl	.L2_37
++	ALIGN_4
++
++
++.L2_39:
++
++	SAVE2x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $2, KK
++#endif
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	ALIGN_4
++
++.L2_40:
++	testq	$1, M		
++	jz	.L2_60		// to next 2 lines of N
++
++	ALIGN_4
++
++.L2_41:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $1, %rax        // number of values in AO
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax
++	je	.L2_46
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_42:
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	je	.L2_46
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	je	.L2_46
++
++	jmp	.L2_42
++	ALIGN_4
++
++.L2_46:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_49
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_47:
++
++	KERNEL1x2_SUB
++
++	jl	.L2_47
++	ALIGN_4
++
++
++.L2_49:
++
++	SAVE1x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $1, KK
++#endif
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	ALIGN_4
++	
++
++
++
++	
++.L2_60:
++#if defined(TRMMKERNEL) && !defined(LEFT)
++        addq    $2, KK
++#endif
++
++
++
++
++.L1_0:
++
++/************************************************************************************************
++* Loop for Nmod6 % 2 > 0
++*************************************************************************************************/
++
++	movq	Nmod6, J		
++	andq	$1, J			// j % 2
++	je	.L999
++	ALIGN_4
++
++.L1_01:
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	ALIGN_4
++
++.L1_02b:
++
++	vmovss	(BO1), %xmm0
++	vmovss	%xmm0,       (BO)
++	addq	$1*SIZE,BO1
++	addq	$1*SIZE,BO
++	decq	%rax
++	jnz	.L1_02b
++
++.L1_02c:
++
++	movq	BO1, B			// next offset of B
++
++.L1_10:
++	movq	C, CO1
++	leaq	(C, LDC, 1), C		// c += 1 * ldc
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        movq    OFFSET, %rax
++        movq    %rax, KK
++#endif
++	
++	movq	A, AO		 	// aoffset = a
++	addq	$16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L1_20
++
++	ALIGN_4
++
++.L1_11:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $16, %rax	// number of values in AO
++#else
++        addq    $1, %rax	// number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L1_16
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_12:
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	je	.L1_16
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	je	.L1_16
++
++	jmp	.L1_12
++	ALIGN_4
++
++.L1_16:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_19
++
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_17:
++
++	KERNEL16x1_SUB
++
++	jl	.L1_17
++	ALIGN_4
++
++
++.L1_19:
++
++	SAVE16x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $16, KK				
++#endif
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	decq	I			# i --
++	jg	.L1_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L1_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L999
++
++	testq	$8, M		
++	jz	.L1_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L1_20_1:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $8, %rax        // number of values in A
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L1_20_6
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_20_2:
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	je	.L1_20_6
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	je	.L1_20_6
++
++	jmp	.L1_20_2
++	ALIGN_4
++
++.L1_20_6:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_20_9
++
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_20_7:
++
++	KERNEL8x1_SUB
++
++	jl	.L1_20_7
++	ALIGN_4
++
++
++.L1_20_9:
++
++	SAVE8x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $8, KK
++#endif
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L1_21pre:
++
++	testq	$4, M		
++	jz	.L1_30
++	ALIGN_4
++
++.L1_21:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $4, %rax        // number of values in A
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L1_26
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_22:
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	je	.L1_26
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	je	.L1_26
++
++	jmp	.L1_22
++	ALIGN_4
++
++.L1_26:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_29
++
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_27:
++
++	KERNEL4x1_SUB
++
++	jl	.L1_27
++	ALIGN_4
++
++
++.L1_29:
++
++	SAVE4x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $4, KK
++#endif
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	ALIGN_4
++	
++
++.L1_30:
++	testq	$2, M		
++	jz	.L1_40
++
++	ALIGN_4
++
++.L1_31:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $2, %rax        // number of values in AO
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L1_36
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_32:
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	je	.L1_36
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	je	.L1_36
++
++	jmp	.L1_32
++	ALIGN_4
++
++.L1_36:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_39
++
++	movq    %rax, BI                        //  Index for BO
++	
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_37:
++
++	KERNEL2x1_SUB
++
++	jl	.L1_37
++	ALIGN_4
++
++
++.L1_39:
++
++	SAVE2x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $2, KK
++#endif
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	ALIGN_4
++
++.L1_40:
++	testq	$1, M		
++	jz	.L999
++
++	ALIGN_4
++
++.L1_41:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $1, %rax        // number of values in AO
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax
++	je	.L1_46
++	movq    %rax, BI                        //  Index for BO
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_42:
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	je	.L1_46
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	je	.L1_46
++
++	jmp	.L1_42
++	ALIGN_4
++
++.L1_46:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_49
++
++	movq    %rax, BI                        //  Index for BO
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_47:
++
++	KERNEL1x1_SUB
++
++	jl	.L1_47
++	ALIGN_4
++
++
++.L1_49:
++
++	SAVE1x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $1, KK
++#endif
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	ALIGN_4
++	
++
++.L999:
++	movq   		SP, %rsp
++	movq	   (%rsp), %rbx
++	movq	  8(%rsp), %rbp
++	movq	 16(%rsp), %r12
++	movq	 24(%rsp), %r13
++	movq	 32(%rsp), %r14
++	movq	 40(%rsp), %r15
++
++#ifdef WINDOWS_ABI
++	movq	 48(%rsp), %rdi
++	movq	 56(%rsp), %rsi
++	movups	 64(%rsp), %xmm6
++	movups	 80(%rsp), %xmm7
++	movups	 96(%rsp), %xmm8
++	movups	112(%rsp), %xmm9
++	movups	128(%rsp), %xmm10
++	movups	144(%rsp), %xmm11
++	movups	160(%rsp), %xmm12
++	movups	176(%rsp), %xmm13
++	movups	192(%rsp), %xmm14
++	movups	208(%rsp), %xmm15
++#endif
++
++	addq	$STACKSIZE, %rsp
++	ret
++
++	EPILOGUE
++
++
++
++#else
++
++/*************************************************************************************
++* TRMM Kernel
++*************************************************************************************/
++
++
++	PROLOGUE
++	PROFCODE
++	
++	subq	$STACKSIZE, %rsp
++	movq	%rbx,   (%rsp)
++	movq	%rbp,  8(%rsp)
++	movq	%r12, 16(%rsp)
++	movq	%r13, 24(%rsp)
++	movq	%r14, 32(%rsp)
++	movq	%r15, 40(%rsp)
++
++	vzeroupper
++
++#ifdef WINDOWS_ABI
++	movq	%rdi,    48(%rsp)
++	movq	%rsi,    56(%rsp)
++	movups	%xmm6,   64(%rsp)
++	movups	%xmm7,   80(%rsp)
++	movups	%xmm8,   96(%rsp)
++	movups	%xmm9,  112(%rsp)
++	movups	%xmm10, 128(%rsp)
++	movups	%xmm11, 144(%rsp)
++	movups	%xmm12, 160(%rsp)
++	movups	%xmm13, 176(%rsp)
++	movups	%xmm14, 192(%rsp)
++	movups	%xmm15, 208(%rsp)
++
++	movq	ARG1,      OLD_M
++	movq	ARG2,      OLD_N
++	movq	ARG3,      OLD_K
++	movq	OLD_A,     A
++	movq	OLD_B,     B
++	movq	OLD_C,     C
++	movq	OLD_LDC,   LDC
++#ifdef TRMMKERNEL
++	vmovsd	OLD_OFFSET, %xmm12
++#endif
++	vmovaps	%xmm3, %xmm0
++
++#else
++	movq	STACKSIZE +  8(%rsp), LDC
++#ifdef TRMMKERNEL
++	movsd	STACKSIZE + 16(%rsp), %xmm12
++#endif
++
++#endif
++
++	movq    %rsp, SP      # save old stack
++        subq    $128 + L_BUFFER_SIZE, %rsp
++        andq    $-4096, %rsp    # align stack
++
++        STACK_TOUCH
++
++	cmpq	$0, OLD_M
++	je	.L999
++
++	cmpq	$0, OLD_N
++	je	.L999
++
++	cmpq	$0, OLD_K
++	je	.L999
++
++	movq	OLD_M, M
++	movq	OLD_N, N
++	movq	OLD_K, K
++
++	vmovss	 %xmm0, ALPHA
++
++	salq	$BASE_SHIFT, LDC
++
++	movq    N, %rax
++        xorq    %rdx, %rdx
++        movq    $4,  %rdi
++        divq    %rdi                    //    N / 4
++        movq    %rax, Ndiv6             //    N / 4
++        movq    %rdx, Nmod6             //    N % 4
++
++	
++
++#ifdef TRMMKERNEL
++	vmovsd	%xmm12, OFFSET
++	vmovsd	%xmm12, KK
++#ifndef LEFT
++	negq	KK
++#endif	
++#endif
++
++	movq	Ndiv6,  J
++	cmpq	$0, J
++	je	.L2_0
++	ALIGN_4
++
++/*******************************************************************************************/
++
++.L4_01:
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	sarq	$2, %rax		// K / 4
++	jz	.L4_01b
++	ALIGN_4
++
++
++.L4_01a:
++        prefetcht0 512(BO1)
++        prefetchw  512(BO)
++
++	vmovups	       (BO1), %xmm0
++	vmovups	 4*SIZE(BO1), %xmm1
++	vmovups	 8*SIZE(BO1), %xmm2
++	vmovups	12*SIZE(BO1), %xmm3
++
++	vmovups	%xmm0,       (BO)
++	vmovups	%xmm1, 4*SIZE(BO)
++	vmovups	%xmm2, 8*SIZE(BO)
++	vmovups	%xmm3,12*SIZE(BO)
++
++	addq	$ 16*SIZE,BO1
++	addq	$ 16*SIZE,BO
++	decq	%rax
++	jnz	.L4_01a
++
++
++.L4_01b:
++
++        movq    K, %rax
++        andq    $3, %rax                // K % 4
++        jz      .L4_02d
++        ALIGN_4
++
++.L4_02c:
++
++	vmovups	(BO1), %xmm0
++	vmovups	%xmm0, (BO)
++	addq	$ 4*SIZE,BO1
++	addq	$ 4*SIZE,BO
++	decq	%rax
++	jnz	.L4_02c
++
++.L4_02d:
++
++	movq	BO1, B			// next offset of B
++
++.L4_10:
++	movq	 C, CO1
++	leaq	(C, LDC, 2), CO2	
++	leaq	(C, LDC, 4), C		// c += 4 * ldc
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        movq    OFFSET, %rax
++        movq    %rax, KK
++#endif
++	
++	movq	A, AO		 	// aoffset = a
++	addq	$ 16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L4_20
++
++	ALIGN_4
++
++.L4_11:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             	// first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $16, %rax	// number of values in AO
++#else
++        addq    $4, %rax	// number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L4_16
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4) , BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_12:
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	je	.L4_16
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	prefetcht0	B_PR1(BO, BI  , SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++	prefetcht0	A_PR1(AO, %rax, SIZE)
++	KERNEL16x4_SUB
++
++	je	.L4_16
++
++	jmp	.L4_12
++	ALIGN_4
++
++.L4_16:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_19
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_17:
++
++	KERNEL16x4_SUB
++
++	jl	.L4_17
++	ALIGN_4
++
++
++.L4_19:
++
++	SAVE16x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $16, KK				
++#endif
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	addq	$16 * SIZE, CO2		# coffset += 16
++	decq	I			# i --
++	jg	.L4_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L4_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L4_60		// to next 3 lines of N
++
++	testq	$8, M		
++	jz	.L4_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L4_20_1:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $8, %rax        // number of values in A
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L4_20_6
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_20_2:
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	je	.L4_20_6
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++	KERNEL8x4_SUB
++
++	je	.L4_20_6
++
++	jmp	.L4_20_2
++	ALIGN_4
++
++.L4_20_6:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_20_9
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_20_7:
++
++	KERNEL8x4_SUB
++
++	jl	.L4_20_7
++	ALIGN_4
++
++
++.L4_20_9:
++
++	SAVE8x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $8, KK
++#endif
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	addq	$8 * SIZE, CO2		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L4_21pre:
++
++	testq	$4, M		
++	jz	.L4_30
++	ALIGN_4
++
++.L4_21:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $4, %rax        // number of values in A
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L4_26
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_22:
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	je	.L4_26
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++	KERNEL4x4_SUB
++
++	je	.L4_26
++
++	jmp	.L4_22
++	ALIGN_4
++
++.L4_26:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_29
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_27:
++
++	KERNEL4x4_SUB
++
++	jl	.L4_27
++	ALIGN_4
++
++
++.L4_29:
++
++	SAVE4x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $4, KK
++#endif
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	addq	$4 * SIZE, CO2		# coffset += 4
++	ALIGN_4
++	
++
++.L4_30:
++	testq	$2, M		
++	jz	.L4_40
++
++	ALIGN_4
++
++.L4_31:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $2, %rax        // number of values in AO
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L4_36
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_32:
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	je	.L4_36
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++	KERNEL2x4_SUB
++
++	je	.L4_36
++
++	jmp	.L4_32
++	ALIGN_4
++
++.L4_36:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_39
++
++	movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++	
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_37:
++
++	KERNEL2x4_SUB
++
++	jl	.L4_37
++	ALIGN_4
++
++
++.L4_39:
++
++	SAVE2x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $2, KK
++#endif
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	addq	$2 * SIZE, CO2		# coffset += 2
++	ALIGN_4
++
++.L4_40:
++	testq	$1, M		
++	jz	.L4_60		// to next 4 lines of N
++
++	ALIGN_4
++
++.L4_41:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $1, %rax        // number of values in AO
++#else
++        addq    $4, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax
++	je	.L4_46
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_42:
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	je	.L4_46
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++	KERNEL1x4_SUB
++
++	je	.L4_46
++
++	jmp	.L4_42
++	ALIGN_4
++
++.L4_46:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L4_49
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (,BI,4), BI                   	//  BI = BI * 4 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L4_47:
++
++	KERNEL1x4_SUB
++
++	jl	.L4_47
++	ALIGN_4
++
++
++.L4_49:
++
++	SAVE1x4
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++	leaq	(,BI, 4), BI			// BI = BI * 4 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $1, KK
++#endif
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	addq	$1 * SIZE, CO2		# coffset += 1
++	ALIGN_4
++	
++
++
++
++	
++.L4_60:
++#if defined(TRMMKERNEL) && !defined(LEFT)
++        addq    $4, KK
++#endif
++
++	decq	J			// j --
++	jg	.L4_01			// next 4 lines of N
++
++
++
++/*******************************************************************************************/
++.L2_0:
++
++	movq	Nmod6, J		
++	andq	$3, J			// j % 4
++	je	.L999
++
++	movq	Nmod6, J		
++	andq	$2, J			// j % 4
++	je	.L1_0
++
++.L2_01:
++
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	sarq	$2, %rax		// K / 4
++	jz	.L2_01b
++	ALIGN_4
++
++.L2_01a:
++
++	vmovsd	      (BO1), %xmm0
++	vmovsd	2*SIZE(BO1), %xmm1
++	vmovsd	4*SIZE(BO1), %xmm2
++	vmovsd	6*SIZE(BO1), %xmm3
++
++	vmovsd	%xmm0,       (BO)
++	vmovsd	%xmm1, 2*SIZE(BO)
++	vmovsd	%xmm2, 4*SIZE(BO)
++	vmovsd	%xmm3, 6*SIZE(BO)
++
++	addq	$8*SIZE,BO1
++	addq	$8*SIZE,BO
++	decq	%rax
++	jnz	.L2_01a
++
++
++.L2_01b:
++
++        movq    K, %rax
++        andq    $3, %rax                // K % 4
++        jz      .L2_02d
++        ALIGN_4
++
++.L2_02c:
++
++	vmovsd 	(BO1), %xmm0
++	vmovsd 	%xmm0, (BO)
++	addq	$2*SIZE,BO1
++	addq	$2*SIZE,BO
++	decq	%rax
++	jnz	.L2_02c
++
++.L2_02d:
++
++	movq	BO1, B			// next offset of B
++
++.L2_10:
++	movq	C, CO1
++	leaq	(C, LDC, 2), C		// c += 2 * ldc
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        movq    OFFSET, %rax
++        movq    %rax, KK
++#endif
++	
++	movq	A, AO		 	// aoffset = a
++	addq	$16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L2_20
++
++	ALIGN_4
++
++.L2_11:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $16, %rax	// number of values in AO
++#else
++        addq    $2, %rax	// number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L2_16
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_12:
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	je	.L2_16
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++	KERNEL16x2_SUB
++
++	je	.L2_16
++
++	jmp	.L2_12
++	ALIGN_4
++
++.L2_16:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_19
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_17:
++
++	KERNEL16x2_SUB
++
++	jl	.L2_17
++	ALIGN_4
++
++
++.L2_19:
++
++	SAVE16x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $16, KK				
++#endif
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	decq	I			# i --
++	jg	.L2_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L2_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L2_60		// to next 2 lines of N
++
++	testq	$8, M		
++	jz	.L2_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L2_20_1:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $8, %rax        // number of values in A
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L2_20_6
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_20_2:
++
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	je	.L2_20_6
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++	KERNEL8x2_SUB
++
++	je	.L2_20_6
++
++	jmp	.L2_20_2
++	ALIGN_4
++
++.L2_20_6:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_20_9
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_20_7:
++
++	KERNEL8x2_SUB
++
++	jl	.L2_20_7
++	ALIGN_4
++
++
++.L2_20_9:
++
++	SAVE8x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $8, KK
++#endif
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L2_21pre:
++
++	testq	$4, M		
++	jz	.L2_30
++	ALIGN_4
++
++.L2_21:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $4, %rax        // number of values in A
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L2_26
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 1 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_22:
++
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	je	.L2_26
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++	KERNEL4x2_SUB
++
++	je	.L2_26
++
++	jmp	.L2_22
++	ALIGN_4
++
++.L2_26:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_29
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_27:
++
++	KERNEL4x2_SUB
++
++	jl	.L2_27
++	ALIGN_4
++
++
++.L2_29:
++
++	SAVE4x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $4, KK
++#endif
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	ALIGN_4
++	
++
++.L2_30:
++	testq	$2, M		
++	jz	.L2_40
++
++	ALIGN_4
++
++.L2_31:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $2, %rax        // number of values in AO
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L2_36
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_32:
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	je	.L2_36
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++	KERNEL2x2_SUB
++
++	je	.L2_36
++
++	jmp	.L2_32
++	ALIGN_4
++
++.L2_36:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_39
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++	
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_37:
++
++	KERNEL2x2_SUB
++
++	jl	.L2_37
++	ALIGN_4
++
++
++.L2_39:
++
++	SAVE2x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $2, KK
++#endif
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	ALIGN_4
++
++.L2_40:
++	testq	$1, M		
++	jz	.L2_60		// to next 2 lines of N
++
++	ALIGN_4
++
++.L2_41:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $1, %rax        // number of values in AO
++#else
++        addq    $2, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax
++	je	.L2_46
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_42:
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	je	.L2_46
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++	KERNEL1x2_SUB
++
++	je	.L2_46
++
++	jmp	.L2_42
++	ALIGN_4
++
++.L2_46:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L2_49
++
++	movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L2_47:
++
++	KERNEL1x2_SUB
++
++	jl	.L2_47
++	ALIGN_4
++
++
++.L2_49:
++
++	SAVE1x2
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BI,BI,1), BI                   //  BI = BI * 2 ; number of values
++        leaq    (BO, BI, SIZE), BO         
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $1, KK
++#endif
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	ALIGN_4
++	
++
++
++
++	
++.L2_60:
++#if defined(TRMMKERNEL) && !defined(LEFT)
++        addq    $2, KK
++#endif
++
++
++
++
++.L1_0:
++
++/************************************************************************************************
++* Loop for Nmod6 % 2 > 0
++*************************************************************************************************/
++
++	movq	Nmod6, J		
++	andq	$1, J			// j % 2
++	je	.L999
++	ALIGN_4
++
++.L1_01:
++	// copy to sub buffer
++	movq	B, BO1
++	leaq    BUFFER1, BO		// first buffer to BO
++	movq	K, %rax
++	ALIGN_4
++
++.L1_02b:
++
++	vmovss	(BO1), %xmm0
++	vmovss	%xmm0,       (BO)
++	addq	$1*SIZE,BO1
++	addq	$1*SIZE,BO
++	decq	%rax
++	jnz	.L1_02b
++
++.L1_02c:
++
++	movq	BO1, B			// next offset of B
++
++.L1_10:
++	movq	C, CO1
++	leaq	(C, LDC, 1), C		// c += 1 * ldc
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        movq    OFFSET, %rax
++        movq    %rax, KK
++#endif
++	
++	movq	A, AO		 	// aoffset = a
++	addq	$16 * SIZE, AO
++
++	movq	M,  I
++	sarq	$4, I			// i = (m >> 4)
++	je	.L1_20
++
++	ALIGN_4
++
++.L1_11:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $16, %rax	// number of values in AO
++#else
++        addq    $1, %rax	// number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax			//  K = K - ( K % 8 )
++	je	.L1_16
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_12:
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	je	.L1_16
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++	KERNEL16x1_SUB
++
++	je	.L1_16
++
++	jmp	.L1_12
++	ALIGN_4
++
++.L1_16:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_19
++
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$4, %rax			// rax = rax * 16 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_17:
++
++	KERNEL16x1_SUB
++
++	jl	.L1_17
++	ALIGN_4
++
++
++.L1_19:
++
++	SAVE16x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $4, %rax                        // rax = rax * 16 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $16, KK				
++#endif
++
++	addq	$16 * SIZE, CO1		# coffset += 16
++	decq	I			# i --
++	jg	.L1_11
++	ALIGN_4	
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++.L1_20:
++	// Test rest of M
++
++	testq	$15, M
++	jz	.L999
++
++	testq	$8, M		
++	jz	.L1_21pre
++	ALIGN_4
++
++/**************************************************************************/
++
++.L1_20_1:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $8, %rax        // number of values in A
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L1_20_6
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_20_2:
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	je	.L1_20_6
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++	KERNEL8x1_SUB
++
++	je	.L1_20_6
++
++	jmp	.L1_20_2
++	ALIGN_4
++
++.L1_20_6:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_20_9
++
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$3, %rax			// rax = rax * 8 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_20_7:
++
++	KERNEL8x1_SUB
++
++	jl	.L1_20_7
++	ALIGN_4
++
++
++.L1_20_9:
++
++	SAVE8x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        salq    $3, %rax                        // rax = rax * 8 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $8, KK
++#endif
++
++	addq	$8 * SIZE, CO1		# coffset += 8
++	ALIGN_4
++	
++
++
++/**************************************************************************/
++
++.L1_21pre:
++
++	testq	$4, M		
++	jz	.L1_30
++	ALIGN_4
++
++.L1_21:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $4, %rax        // number of values in A
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L1_26
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_22:
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	je	.L1_26
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++	KERNEL4x1_SUB
++
++	je	.L1_26
++
++	jmp	.L1_22
++	ALIGN_4
++
++.L1_26:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_29
++
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$2, %rax			// rax = rax * 4 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_27:
++
++	KERNEL4x1_SUB
++
++	jl	.L1_27
++	ALIGN_4
++
++
++.L1_29:
++
++	SAVE4x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        salq    $2, %rax                        // rax = rax * 4 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $4, KK
++#endif
++
++	addq	$4 * SIZE, CO1		# coffset += 4
++	ALIGN_4
++	
++
++.L1_30:
++	testq	$2, M		
++	jz	.L1_40
++
++	ALIGN_4
++
++.L1_31:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $2, %rax        // number of values in AO
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++
++	andq	$-8, %rax
++	je	.L1_36
++	movq    %rax, BI                        //  Index for BO
++
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_32:
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	je	.L1_36
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++	KERNEL2x1_SUB
++
++	je	.L1_36
++
++	jmp	.L1_32
++	ALIGN_4
++
++.L1_36:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_39
++
++	movq    %rax, BI                        //  Index for BO
++	
++	salq	$1, %rax			// rax = rax *2 ; number of values
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_37:
++
++	KERNEL2x1_SUB
++
++	jl	.L1_37
++	ALIGN_4
++
++
++.L1_39:
++
++	SAVE2x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        salq    $1, %rax                        // rax = rax * 2 ; number of values
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $2, KK
++#endif
++
++	addq	$2 * SIZE, CO1		# coffset += 2
++	ALIGN_4
++
++.L1_40:
++	testq	$1, M		
++	jz	.L999
++
++	ALIGN_4
++
++.L1_41:
++#if !defined(TRMMKERNEL) || \
++        (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++        (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++#else
++        movq    KK, %rax
++        leaq    BUFFER1, BO             // first buffer to BO
++        addq    $4 * SIZE, BO
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO
++        leaq    (AO, %rax, SIZE), AO
++#endif
++
++
++	vzeroall
++
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#elif (defined(LEFT) && !defined(TRANSA)) || (!defined(LEFT) && defined(TRANSA))
++        movq    K, %rax
++        subq    KK, %rax
++        movq    %rax, KKK
++#else
++        movq    KK, %rax
++#ifdef LEFT
++        addq    $1, %rax        // number of values in AO
++#else
++        addq    $1, %rax        // number of values in BO
++#endif
++        movq    %rax, KKK
++#endif
++
++	andq	$-8, %rax
++	je	.L1_46
++	movq    %rax, BI                        //  Index for BO
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_42:
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	je	.L1_46
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++	KERNEL1x1_SUB
++
++	je	.L1_46
++
++	jmp	.L1_42
++	ALIGN_4
++
++.L1_46:
++#ifndef TRMMKERNEL
++        movq    K, %rax
++#else
++        movq    KKK, %rax
++#endif
++
++	andq	$7, %rax		# if (k & 1)
++	je .L1_49
++
++	movq    %rax, BI                        //  Index for BO
++
++	leaq	(AO, %rax, SIZE), AO
++	leaq	(BO, BI, SIZE), BO
++	negq	BI
++	negq	%rax
++	ALIGN_4
++
++.L1_47:
++
++	KERNEL1x1_SUB
++
++	jl	.L1_47
++	ALIGN_4
++
++
++.L1_49:
++
++	SAVE1x1
++
++#if (defined(TRMMKERNEL) &&  defined(LEFT) &&  defined(TRANSA)) || \
++    (defined(TRMMKERNEL) && !defined(LEFT) && !defined(TRANSA))
++        movq    K, %rax 
++        subq    KKK, %rax
++        movq    %rax, BI                        //  Index for BO
++        leaq    (BO, BI, SIZE), BO         
++        leaq    (AO, %rax, SIZE), AO
++#endif  
++
++
++#if defined(TRMMKERNEL) && defined(LEFT)
++        addq    $1, KK
++#endif
++
++	addq	$1 * SIZE, CO1		# coffset += 1
++	ALIGN_4
++	
++
++.L999:
++	movq   		SP, %rsp
++	movq	   (%rsp), %rbx
++	movq	  8(%rsp), %rbp
++	movq	 16(%rsp), %r12
++	movq	 24(%rsp), %r13
++	movq	 32(%rsp), %r14
++	movq	 40(%rsp), %r15
++
++#ifdef WINDOWS_ABI
++	movq	 48(%rsp), %rdi
++	movq	 56(%rsp), %rsi
++	movups	 64(%rsp), %xmm6
++	movups	 80(%rsp), %xmm7
++	movups	 96(%rsp), %xmm8
++	movups	112(%rsp), %xmm9
++	movups	128(%rsp), %xmm10
++	movups	144(%rsp), %xmm11
++	movups	160(%rsp), %xmm12
++	movups	176(%rsp), %xmm13
++	movups	192(%rsp), %xmm14
++	movups	208(%rsp), %xmm15
++#endif
++
++	addq	$STACKSIZE, %rsp
++	ret
++
++	EPILOGUE
++
++
++#endif
++
+diff --git a/kernel/x86_64/sgemv_n_4.c b/kernel/x86_64/sgemv_n_4.c
+index fd028964..65305ac5 100644
+--- a/kernel/x86_64/sgemv_n_4.c
++++ b/kernel/x86_64/sgemv_n_4.c
+@@ -35,7 +35,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "sgemv_n_microk_nehalem-4.c"
+ #elif defined(SANDYBRIDGE)
+ #include "sgemv_n_microk_sandy-4.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "sgemv_n_microk_haswell-4.c"
+ #endif
+ 
+diff --git a/kernel/x86_64/sgemv_t_4.c b/kernel/x86_64/sgemv_t_4.c
+index f04d461f..065e5b38 100644
+--- a/kernel/x86_64/sgemv_t_4.c
++++ b/kernel/x86_64/sgemv_t_4.c
+@@ -34,7 +34,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "sgemv_t_microk_bulldozer-4.c"
+ #elif defined(SANDYBRIDGE)
+ #include "sgemv_t_microk_sandy-4.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "sgemv_t_microk_haswell-4.c"
+ #endif
+ 
+diff --git a/kernel/x86_64/ssymv_L.c b/kernel/x86_64/ssymv_L.c
+index 199d8a51..73ae001e 100644
+--- a/kernel/x86_64/ssymv_L.c
++++ b/kernel/x86_64/ssymv_L.c
+@@ -32,7 +32,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "ssymv_L_microk_bulldozer-2.c"
+ #elif defined(NEHALEM)
+ #include "ssymv_L_microk_nehalem-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "ssymv_L_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "ssymv_L_microk_sandy-2.c"
+diff --git a/kernel/x86_64/ssymv_U.c b/kernel/x86_64/ssymv_U.c
+index 691a071f..f37c251a 100644
+--- a/kernel/x86_64/ssymv_U.c
++++ b/kernel/x86_64/ssymv_U.c
+@@ -33,7 +33,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "ssymv_U_microk_bulldozer-2.c"
+ #elif defined(NEHALEM)
+ #include "ssymv_U_microk_nehalem-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "ssymv_U_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "ssymv_U_microk_sandy-2.c"
+diff --git a/kernel/x86_64/symv_L_sse.S b/kernel/x86_64/symv_L_sse.S
+index 8cae3fc1..8a5c44c9 100644
+--- a/kernel/x86_64/symv_L_sse.S
++++ b/kernel/x86_64/symv_L_sse.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 12)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 12)
+diff --git a/kernel/x86_64/symv_L_sse2.S b/kernel/x86_64/symv_L_sse2.S
+index d7091624..0c40a343 100644
+--- a/kernel/x86_64/symv_L_sse2.S
++++ b/kernel/x86_64/symv_L_sse2.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 12)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 12)
+diff --git a/kernel/x86_64/symv_U_sse.S b/kernel/x86_64/symv_U_sse.S
+index 3549b986..7a2eeace 100644
+--- a/kernel/x86_64/symv_U_sse.S
++++ b/kernel/x86_64/symv_U_sse.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 12)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 12)
+diff --git a/kernel/x86_64/symv_U_sse2.S b/kernel/x86_64/symv_U_sse2.S
+index 882b035a..0408b577 100644
+--- a/kernel/x86_64/symv_U_sse2.S
++++ b/kernel/x86_64/symv_U_sse2.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 12)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 24)
+diff --git a/kernel/x86_64/zaxpy.c b/kernel/x86_64/zaxpy.c
+index 8cb1d532..53866cf9 100644
+--- a/kernel/x86_64/zaxpy.c
++++ b/kernel/x86_64/zaxpy.c
+@@ -33,7 +33,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "zaxpy_microk_bulldozer-2.c"
+ #elif defined(PILEDRIVER) || defined(STEAMROLLER) || defined(EXCAVATOR)
+ #include "zaxpy_microk_steamroller-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "zaxpy_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "zaxpy_microk_sandy-2.c"
+diff --git a/kernel/x86_64/zdot.c b/kernel/x86_64/zdot.c
+index d11c7664..ef12569c 100644
+--- a/kernel/x86_64/zdot.c
++++ b/kernel/x86_64/zdot.c
+@@ -33,7 +33,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "zdot_microk_bulldozer-2.c"
+ #elif defined(STEAMROLLER) || defined(PILEDRIVER) || defined(EXCAVATOR)
+ #include "zdot_microk_steamroller-2.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "zdot_microk_haswell-2.c"
+ #elif defined(SANDYBRIDGE)
+ #include "zdot_microk_sandy-2.c"
+diff --git a/kernel/x86_64/zgemv_n_4.c b/kernel/x86_64/zgemv_n_4.c
+index f6f88155..0fedc496 100644
+--- a/kernel/x86_64/zgemv_n_4.c
++++ b/kernel/x86_64/zgemv_n_4.c
+@@ -30,7 +30,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "common.h"
+ 
+ 
+-#if defined(HASWELL) || defined(ZEN)
++#if defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "zgemv_n_microk_haswell-4.c"
+ #elif defined(SANDYBRIDGE)
+ #include "zgemv_n_microk_sandy-4.c"
+diff --git a/kernel/x86_64/zgemv_t_4.c b/kernel/x86_64/zgemv_t_4.c
+index 3e4b7d5d..2ab7a671 100644
+--- a/kernel/x86_64/zgemv_t_4.c
++++ b/kernel/x86_64/zgemv_t_4.c
+@@ -31,7 +31,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #if defined(BULLDOZER) || defined(PILEDRIVER) || defined(STEAMROLLER)  || defined(EXCAVATOR)
+ #include "zgemv_t_microk_bulldozer-4.c"
+-#elif defined(HASWELL) || defined(ZEN)
++#elif defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "zgemv_t_microk_haswell-4.c"
+ #endif
+ 
+diff --git a/kernel/x86_64/zscal.c b/kernel/x86_64/zscal.c
+index aa5d8fac..2a6d0e4c 100644
+--- a/kernel/x86_64/zscal.c
++++ b/kernel/x86_64/zscal.c
+@@ -28,7 +28,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "common.h"
+ 
+ 
+-#if defined(HASWELL) || defined(ZEN)
++#if defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #include "zscal_microk_haswell-2.c"
+ #elif defined(BULLDOZER)  || defined(PILEDRIVER)
+ #include "zscal_microk_bulldozer-2.c"
+diff --git a/kernel/x86_64/zsymv_L_sse.S b/kernel/x86_64/zsymv_L_sse.S
+index dd95eea1..e44bd755 100644
+--- a/kernel/x86_64/zsymv_L_sse.S
++++ b/kernel/x86_64/zsymv_L_sse.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 24)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 24)
+diff --git a/kernel/x86_64/zsymv_L_sse2.S b/kernel/x86_64/zsymv_L_sse2.S
+index 75124cf3..e9f330c3 100644
+--- a/kernel/x86_64/zsymv_L_sse2.S
++++ b/kernel/x86_64/zsymv_L_sse2.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 24)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE) || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 24)
+diff --git a/kernel/x86_64/zsymv_U_sse.S b/kernel/x86_64/zsymv_U_sse.S
+index db1a4ff5..9f0dead1 100644
+--- a/kernel/x86_64/zsymv_U_sse.S
++++ b/kernel/x86_64/zsymv_U_sse.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 24)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 24)
+diff --git a/kernel/x86_64/zsymv_U_sse2.S b/kernel/x86_64/zsymv_U_sse2.S
+index 599765a6..b6106a37 100644
+--- a/kernel/x86_64/zsymv_U_sse2.S
++++ b/kernel/x86_64/zsymv_U_sse2.S
+@@ -57,7 +57,7 @@
+ #define PREFETCHSIZE	(16 * 24)
+ #endif
+ 
+-#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN)
++#if defined(NEHALEM) || defined(SANDYBRIDGE)  || defined(HASWELL) || defined(ZEN) || defined (SKYLAKEX)
+ #define PREFETCH	prefetcht0
+ #define PREFETCHW	prefetcht0
+ #define PREFETCHSIZE	(16 * 24)
+diff --git a/param.h b/param.h
+index 4227d548..49a5e85e 100644
+--- a/param.h
++++ b/param.h
+@@ -1613,6 +1613,125 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #endif
+ 
+ 
++#endif
++
++#ifdef SKYLAKEX
++
++#define SNUMOPT         16
++#define DNUMOPT         8
++
++#define GEMM_DEFAULT_OFFSET_A     0
++#define GEMM_DEFAULT_OFFSET_B     0
++#define GEMM_DEFAULT_ALIGN 0x03fffUL
++
++#define SYMV_P  8
++
++#define SWITCH_RATIO	4
++
++#ifdef ARCH_X86
++
++#define SGEMM_DEFAULT_UNROLL_M 4
++#define DGEMM_DEFAULT_UNROLL_M 2
++#define QGEMM_DEFAULT_UNROLL_M 2
++#define CGEMM_DEFAULT_UNROLL_M 2
++#define ZGEMM_DEFAULT_UNROLL_M 1
++#define XGEMM_DEFAULT_UNROLL_M 1
++
++#define SGEMM_DEFAULT_UNROLL_N 4
++#define DGEMM_DEFAULT_UNROLL_N 4
++#define QGEMM_DEFAULT_UNROLL_N 2
++#define CGEMM_DEFAULT_UNROLL_N 2
++#define ZGEMM_DEFAULT_UNROLL_N 2
++#define XGEMM_DEFAULT_UNROLL_N 1
++
++#else
++
++#define SGEMM_DEFAULT_UNROLL_M 16
++#define DGEMM_DEFAULT_UNROLL_M 4
++#define QGEMM_DEFAULT_UNROLL_M 2
++#define CGEMM_DEFAULT_UNROLL_M 8
++#define ZGEMM_DEFAULT_UNROLL_M 4
++#define XGEMM_DEFAULT_UNROLL_M 1
++
++#define SGEMM_DEFAULT_UNROLL_N 4
++#define DGEMM_DEFAULT_UNROLL_N 8
++#define QGEMM_DEFAULT_UNROLL_N 2
++#define CGEMM_DEFAULT_UNROLL_N 2
++#define ZGEMM_DEFAULT_UNROLL_N 2
++#define XGEMM_DEFAULT_UNROLL_N 1
++
++#define SGEMM_DEFAULT_UNROLL_MN 32
++#define DGEMM_DEFAULT_UNROLL_MN 32
++#endif
++
++#ifdef ARCH_X86
++
++#define SGEMM_DEFAULT_P 512
++#define SGEMM_DEFAULT_R sgemm_r
++#define DGEMM_DEFAULT_P 512
++#define DGEMM_DEFAULT_R dgemm_r
++#define QGEMM_DEFAULT_P 504
++#define QGEMM_DEFAULT_R qgemm_r
++#define CGEMM_DEFAULT_P 128
++#define CGEMM_DEFAULT_R 1024
++#define ZGEMM_DEFAULT_P 512
++#define ZGEMM_DEFAULT_R zgemm_r
++#define XGEMM_DEFAULT_P 252
++#define XGEMM_DEFAULT_R xgemm_r
++#define SGEMM_DEFAULT_Q 256
++#define DGEMM_DEFAULT_Q 256
++#define QGEMM_DEFAULT_Q 128
++#define CGEMM_DEFAULT_Q 256
++#define ZGEMM_DEFAULT_Q 192
++#define XGEMM_DEFAULT_Q 128
++
++#else
++
++#define SGEMM_DEFAULT_P 768
++#define DGEMM_DEFAULT_P 512
++#define CGEMM_DEFAULT_P 384
++#define ZGEMM_DEFAULT_P 256
++
++#ifdef WINDOWS_ABI
++#define SGEMM_DEFAULT_Q 320
++#define DGEMM_DEFAULT_Q 128
++#else
++#define SGEMM_DEFAULT_Q 384
++#define DGEMM_DEFAULT_Q 256
++#endif
++#define CGEMM_DEFAULT_Q 192
++#define ZGEMM_DEFAULT_Q 128
++
++#define SGEMM_DEFAULT_R sgemm_r
++#define DGEMM_DEFAULT_R 13824
++#define CGEMM_DEFAULT_R cgemm_r
++#define ZGEMM_DEFAULT_R zgemm_r
++
++#define QGEMM_DEFAULT_Q 128
++#define QGEMM_DEFAULT_P 504
++#define QGEMM_DEFAULT_R qgemm_r
++#define XGEMM_DEFAULT_P 252
++#define XGEMM_DEFAULT_R xgemm_r
++#define XGEMM_DEFAULT_Q 128
++
++#define CGEMM3M_DEFAULT_UNROLL_N 8
++#define CGEMM3M_DEFAULT_UNROLL_M 4
++#define ZGEMM3M_DEFAULT_UNROLL_N 8
++#define ZGEMM3M_DEFAULT_UNROLL_M 2
++
++#define CGEMM3M_DEFAULT_P 448
++#define ZGEMM3M_DEFAULT_P 224
++#define XGEMM3M_DEFAULT_P 112
++#define CGEMM3M_DEFAULT_Q 224
++#define ZGEMM3M_DEFAULT_Q 224
++#define XGEMM3M_DEFAULT_Q 224
++#define CGEMM3M_DEFAULT_R 12288
++#define ZGEMM3M_DEFAULT_R 12288
++#define XGEMM3M_DEFAULT_R 12288
++
++#endif
++
++
+ #endif
+ 
+ 
+-- 
+2.17.1
+
