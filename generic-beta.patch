@@ -1,0 +1,10 @@
+The generic beta function is faster than the handcoded asm with gcc7+
+
+--- OpenBLAS-0.3.0/kernel/x86_64/KERNEL.HASWELL~	2018-05-23 13:12:20.000000000 +0000
++++ OpenBLAS-0.3.0/kernel/x86_64/KERNEL.HASWELL	2018-06-04 06:52:12.372316923 +0000
+@@ -98,3 +98,5 @@
+ CGEMM3MKERNEL    =  zgemm3m_kernel_4x8_nehalem.S
+ ZGEMM3MKERNEL    =  zgemm3m_kernel_2x8_nehalem.S
+ 
++SGEMM_BETA = ../generic/gemm_beta.c
++DGEMM_BETA = ../generic/gemm_beta.c
