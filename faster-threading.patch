@@ -1,3 +1,10 @@
+Optimize threading
+
+See
+https://github.com/xianyi/OpenBLAS/pull/1623
+and
+https://github.com/xianyi/OpenBLAS/issues/1622
+
 diff --git a/common_x86_64.h b/common_x86_64.h
 index 7461aaf6..62e138e3 100644
 --- a/common_x86_64.h
