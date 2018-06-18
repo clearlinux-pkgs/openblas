@@ -1,0 +1,536 @@
+commit bf40f806efa55c7a7c7ec57535919598eaeb569d
+Author: Craig Donner <cdonner@google.com>
+Date:   Thu Jun 14 12:18:04 2018 +0100
+
+    Remove the need for most locking in memory.c.
+    
+    Using thread local storage for tracking memory allocations means that threads
+    no longer have to lock at all when doing memory allocations / frees. This
+    particularly helps the gemm driver since it does an allocation per invocation.
+    Even without threading at all, this helps, since even calling a lock with
+    no contention has a cost:
+    
+    Before this change, no threading:
+    ```
+    ----------------------------------------------------
+    Benchmark             Time           CPU Iterations
+    ----------------------------------------------------
+    BM_SGEMM/4          102 ns        102 ns   13504412
+    BM_SGEMM/6          175 ns        175 ns    7997580
+    BM_SGEMM/8          205 ns        205 ns    6842073
+    BM_SGEMM/10         266 ns        266 ns    5294919
+    BM_SGEMM/16         478 ns        478 ns    2963441
+    BM_SGEMM/20         690 ns        690 ns    2144755
+    BM_SGEMM/32        1906 ns       1906 ns     716981
+    BM_SGEMM/40        2983 ns       2983 ns     473218
+    BM_SGEMM/64        9421 ns       9422 ns     148450
+    BM_SGEMM/72       12630 ns      12631 ns     112105
+    BM_SGEMM/80       15845 ns      15846 ns      89118
+    BM_SGEMM/90       25675 ns      25676 ns      54332
+    BM_SGEMM/100      29864 ns      29865 ns      47120
+    BM_SGEMM/112      37841 ns      37842 ns      36717
+    BM_SGEMM/128      56531 ns      56532 ns      25361
+    BM_SGEMM/140      75886 ns      75888 ns      18143
+    BM_SGEMM/150      98493 ns      98496 ns      14299
+    BM_SGEMM/160     102620 ns     102622 ns      13381
+    BM_SGEMM/170     135169 ns     135173 ns      10231
+    BM_SGEMM/180     146170 ns     146172 ns       9535
+    BM_SGEMM/189     190226 ns     190231 ns       7397
+    BM_SGEMM/200     194513 ns     194519 ns       7210
+    BM_SGEMM/256     396561 ns     396573 ns       3531
+    ```
+    with this change:
+    ```
+    ----------------------------------------------------
+    Benchmark             Time           CPU Iterations
+    ----------------------------------------------------
+    BM_SGEMM/4           95 ns         95 ns   14500387
+    BM_SGEMM/6          166 ns        166 ns    8381763
+    BM_SGEMM/8          196 ns        196 ns    7277044
+    BM_SGEMM/10         256 ns        256 ns    5515721
+    BM_SGEMM/16         463 ns        463 ns    3025197
+    BM_SGEMM/20         636 ns        636 ns    2070213
+    BM_SGEMM/32        1885 ns       1885 ns     739444
+    BM_SGEMM/40        2969 ns       2969 ns     472152
+    BM_SGEMM/64        9371 ns       9372 ns     148932
+    BM_SGEMM/72       12431 ns      12431 ns     112919
+    BM_SGEMM/80       15615 ns      15616 ns      89978
+    BM_SGEMM/90       25397 ns      25398 ns      55041
+    BM_SGEMM/100      29445 ns      29446 ns      47540
+    BM_SGEMM/112      37530 ns      37531 ns      37286
+    BM_SGEMM/128      55373 ns      55375 ns      25277
+    BM_SGEMM/140      76241 ns      76241 ns      18259
+    BM_SGEMM/150     102196 ns     102200 ns      13736
+    BM_SGEMM/160     101521 ns     101525 ns      13556
+    BM_SGEMM/170     136182 ns     136184 ns      10567
+    BM_SGEMM/180     146861 ns     146864 ns       9035
+    BM_SGEMM/189     192632 ns     192632 ns       7231
+    BM_SGEMM/200     198547 ns     198555 ns       6995
+    BM_SGEMM/256     392316 ns     392330 ns       3539
+    ```
+    
+    Before, when built with USE_THREAD=1, GEMM_MULTITHREAD_THRESHOLD = 4, the cost
+    of small matrix operations was overshadowed by thread locking (look smaller than
+    32) even when not explicitly spawning threads:
+    ```
+    ----------------------------------------------------
+    Benchmark             Time           CPU Iterations
+    ----------------------------------------------------
+    BM_SGEMM/4          328 ns        328 ns    4170562
+    BM_SGEMM/6          396 ns        396 ns    3536400
+    BM_SGEMM/8          418 ns        418 ns    3330102
+    BM_SGEMM/10         491 ns        491 ns    2863047
+    BM_SGEMM/16         710 ns        710 ns    2028314
+    BM_SGEMM/20         871 ns        871 ns    1581546
+    BM_SGEMM/32        2132 ns       2132 ns     657089
+    BM_SGEMM/40        3197 ns       3196 ns     437969
+    BM_SGEMM/64        9645 ns       9645 ns     144987
+    BM_SGEMM/72       35064 ns      32881 ns      50264
+    BM_SGEMM/80       37661 ns      35787 ns      42080
+    BM_SGEMM/90       36507 ns      36077 ns      40091
+    BM_SGEMM/100      32513 ns      31850 ns      48607
+    BM_SGEMM/112      41742 ns      41207 ns      37273
+    BM_SGEMM/128      67211 ns      65095 ns      21933
+    BM_SGEMM/140      68263 ns      67943 ns      19245
+    BM_SGEMM/150     121854 ns     115439 ns      10660
+    BM_SGEMM/160     116826 ns     115539 ns      10000
+    BM_SGEMM/170     126566 ns     122798 ns      11960
+    BM_SGEMM/180     130088 ns     127292 ns      11503
+    BM_SGEMM/189     120309 ns     116634 ns      13162
+    BM_SGEMM/200     114559 ns     110993 ns      10000
+    BM_SGEMM/256     217063 ns     207806 ns       6417
+    ```
+    and after, it's gone (note this includes my other change which reduces calls
+    to num_cpu_avail):
+    ```
+    ----------------------------------------------------
+    Benchmark             Time           CPU Iterations
+    ----------------------------------------------------
+    BM_SGEMM/4           95 ns         95 ns   12347650
+    BM_SGEMM/6          166 ns        166 ns    8259683
+    BM_SGEMM/8          193 ns        193 ns    7162210
+    BM_SGEMM/10         258 ns        258 ns    5415657
+    BM_SGEMM/16         471 ns        471 ns    2981009
+    BM_SGEMM/20         666 ns        666 ns    2148002
+    BM_SGEMM/32        1903 ns       1903 ns     738245
+    BM_SGEMM/40        2969 ns       2969 ns     473239
+    BM_SGEMM/64        9440 ns       9440 ns     148442
+    BM_SGEMM/72       37239 ns      33330 ns      46813
+    BM_SGEMM/80       57350 ns      55949 ns      32251
+    BM_SGEMM/90       36275 ns      36249 ns      42259
+    BM_SGEMM/100      31111 ns      31008 ns      45270
+    BM_SGEMM/112      43782 ns      40912 ns      34749
+    BM_SGEMM/128      67375 ns      64406 ns      22443
+    BM_SGEMM/140      76389 ns      67003 ns      21430
+    BM_SGEMM/150      72952 ns      71830 ns      19793
+    BM_SGEMM/160      97039 ns      96858 ns      11498
+    BM_SGEMM/170     123272 ns     122007 ns      11855
+    BM_SGEMM/180     126828 ns     126505 ns      11567
+    BM_SGEMM/189     115179 ns     114665 ns      11044
+    BM_SGEMM/200      89289 ns      87259 ns      16147
+    BM_SGEMM/256     226252 ns     222677 ns       7375
+    ```
+    
+    I've also tested this with ThreadSanitizer and found no data races during
+    execution.  I'm not sure why 200 is always faster than it's neighbors, we must
+    be hitting some optimal cache size or something.
+
+diff --git a/driver/others/memory.c b/driver/others/memory.c
+index d69e52e9..85f79061 100644
+--- a/driver/others/memory.c
++++ b/driver/others/memory.c
+@@ -13,9 +13,9 @@ met:
+       notice, this list of conditions and the following disclaimer in
+       the documentation and/or other materials provided with the
+       distribution.
+-   3. Neither the name of the OpenBLAS project nor the names of 
+-      its contributors may be used to endorse or promote products 
+-      derived from this software without specific prior written 
++   3. Neither the name of the OpenBLAS project nor the names of
++      its contributors may be used to endorse or promote products
++      derived from this software without specific prior written
+       permission.
+ 
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+@@ -139,6 +139,14 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #define FIXED_PAGESIZE 4096
+ #endif
+ 
++#ifndef BUFFERS_PER_THREAD
++#ifdef USE_OPENMP
++#define BUFFERS_PER_THREAD (MAX_CPU_NUMBER * 2 * MAX_PARALLEL_NUMBER)
++#else
++#define BUFFERS_PER_THREAD NUM_BUFFERS
++#endif
++#endif
++
+ #define BITMASK(a, b, c) ((((a) >> (b)) & (c)))
+ 
+ #if defined(_MSC_VER) && !defined(__clang__)
+@@ -213,7 +221,7 @@ int i,n;
+   ret = sched_getaffinity(0,size,cpusetp);
+   if (ret!=0) return nums;
+   ret = CPU_COUNT_S(size,cpusetp);
+-  if (ret > 0 && ret < nums) nums = ret;	
++  if (ret > 0 && ret < nums) nums = ret;
+   CPU_FREE(cpusetp);
+   return nums;
+  #endif
+@@ -415,8 +423,15 @@ struct release_t {
+ 
+ int hugetlb_allocated = 0;
+ 
+-static struct release_t release_info[NUM_BUFFERS];
+-static int release_pos = 0;
++#if defined(OS_WINDOWS)
++#define THREAD_LOCAL __declspec(thread)
++#define UNLIKELY_TO_BE_ZERO(x) (x)
++#else
++#define THREAD_LOCAL __thread
++#define UNLIKELY_TO_BE_ZERO(x) (__builtin_expect(x, 0))
++#endif
++static struct release_t THREAD_LOCAL release_info[BUFFERS_PER_THREAD];
++static int THREAD_LOCAL release_pos = 0;
+ 
+ #if defined(OS_LINUX) && !defined(NO_WARMUP)
+ static int hot_alloc = 0;
+@@ -459,15 +474,9 @@ static void *alloc_mmap(void *address){
+   }
+ 
+   if (map_address != (void *)-1) {
+-#if defined(SMP) && !defined(USE_OPENMP)
+-    LOCK_COMMAND(&alloc_lock);
+-#endif    
+     release_info[release_pos].address = map_address;
+     release_info[release_pos].func    = alloc_mmap_free;
+     release_pos ++;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-    UNLOCK_COMMAND(&alloc_lock);
+-#endif    
+   }
+ 
+ #ifdef OS_LINUX
+@@ -611,15 +620,9 @@ static void *alloc_mmap(void *address){
+ #endif
+ 
+   if (map_address != (void *)-1) {
+-#if defined(SMP) && !defined(USE_OPENMP)
+-    LOCK_COMMAND(&alloc_lock);
+-#endif
+     release_info[release_pos].address = map_address;
+     release_info[release_pos].func    = alloc_mmap_free;
+     release_pos ++;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-    UNLOCK_COMMAND(&alloc_lock);
+-#endif
+   }
+ 
+   return map_address;
+@@ -872,7 +875,7 @@ static void *alloc_hugetlb(void *address){
+ 
+   tp.PrivilegeCount = 1;
+   tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+-  
++
+   if (LookupPrivilegeValue(NULL, SE_LOCK_MEMORY_NAME, &tp.Privileges[0].Luid) != TRUE) {
+       CloseHandle(hToken);
+       return (void*)-1;
+@@ -961,20 +964,17 @@ static BLASULONG base_address      = 0UL;
+ static BLASULONG base_address      = BASE_ADDRESS;
+ #endif
+ 
+-static volatile struct {
+-  BLASULONG lock;
++struct memory_t {
+   void *addr;
+-#if defined(WHEREAMI) && !defined(USE_OPENMP)
+-  int   pos;
+-#endif
+   int used;
+ #ifndef __64BIT__
+   char dummy[48];
+ #else
+   char dummy[40];
+ #endif
++};
+ 
+-} memory[NUM_BUFFERS];
++static struct memory_t THREAD_LOCAL memory[BUFFERS_PER_THREAD];
+ 
+ static int memory_initialized = 0;
+ 
+@@ -987,9 +987,6 @@ static int memory_initialized = 0;
+ void *blas_memory_alloc(int procpos){
+ 
+   int position;
+-#if defined(WHEREAMI) && !defined(USE_OPENMP)
+-  int mypos;
+-#endif
+ 
+   void *map_address;
+ 
+@@ -1020,102 +1017,48 @@ void *blas_memory_alloc(int procpos){
+   };
+   void *(**func)(void *address);
+ 
+-#if defined(USE_OPENMP)
+-  if (!memory_initialized) {
+-#endif
+-
+-  LOCK_COMMAND(&alloc_lock);
++  if (UNLIKELY_TO_BE_ZERO(memory_initialized)) {
+ 
+-  if (!memory_initialized) {
++    /* Only allow a single thread to initialize memory system */
++    LOCK_COMMAND(&alloc_lock);
+ 
+-#if defined(WHEREAMI) && !defined(USE_OPENMP)
+-    for (position = 0; position < NUM_BUFFERS; position ++){
+-      memory[position].addr   = (void *)0;
+-      memory[position].pos    = -1;
+-      memory[position].used   = 0;
+-      memory[position].lock   = 0;
+-    }
+-#endif
++    if (!memory_initialized) {
+ 
+ #ifdef DYNAMIC_ARCH
+-    gotoblas_dynamic_init();
++      gotoblas_dynamic_init();
+ #endif
+ 
+ #if defined(SMP) && defined(OS_LINUX) && !defined(NO_AFFINITY)
+-    gotoblas_affinity_init();
++      gotoblas_affinity_init();
+ #endif
+ 
+ #ifdef SMP
+-    if (!blas_num_threads) blas_cpu_number = blas_get_cpu_number();
++      if (!blas_num_threads) blas_cpu_number = blas_get_cpu_number();
+ #endif
+ 
+ #if defined(ARCH_X86) || defined(ARCH_X86_64) || defined(ARCH_IA64) || defined(ARCH_MIPS64) || defined(ARCH_ARM64)
+ #ifndef DYNAMIC_ARCH
+-    blas_set_parameter();
++      blas_set_parameter();
+ #endif
+ #endif
+ 
+-    memory_initialized = 1;
++      memory_initialized = 1;
+ 
++    }
++    UNLOCK_COMMAND(&alloc_lock);
+   }
+-  UNLOCK_COMMAND(&alloc_lock);
+-#if defined(USE_OPENMP)
+-  }
+-#endif
+ 
+ #ifdef DEBUG
+   printf("Alloc Start ...\n");
+-#endif
+-
+-#if defined(WHEREAMI) && !defined(USE_OPENMP)
+-
+-  mypos = WhereAmI();
+-
+-  position = mypos;
+-  while (position >= NUM_BUFFERS) position >>= 1;
+-
+-  do {
+-    if (!memory[position].used && (memory[position].pos == mypos)) {
+-#if defined(SMP) && !defined(USE_OPENMP)
+-      LOCK_COMMAND(&alloc_lock);
+-#else      
+-      blas_lock(&memory[position].lock);
+-#endif
+-      if (!memory[position].used) goto allocation;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-      UNLOCK_COMMAND(&alloc_lock);
+-#else
+-      blas_unlock(&memory[position].lock);
+-#endif      
+-    }
+-
+-    position ++;
+-
+-  } while (position < NUM_BUFFERS);
+-
+-
+ #endif
+ 
+   position = 0;
+ 
+   do {
+-#if defined(SMP) && !defined(USE_OPENMP)
+-      LOCK_COMMAND(&alloc_lock);
+-#else
+-    if (!memory[position].used) { 
+-      blas_lock(&memory[position].lock);
+-#endif
+       if (!memory[position].used) goto allocation;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-      UNLOCK_COMMAND(&alloc_lock);
+-#else      
+-      blas_unlock(&memory[position].lock);
+-      }
+-#endif
+-
+     position ++;
+ 
+-  } while (position < NUM_BUFFERS);
++  } while (position < BUFFERS_PER_THREAD);
+ 
+   goto error;
+ 
+@@ -1126,11 +1069,6 @@ void *blas_memory_alloc(int procpos){
+ #endif
+ 
+   memory[position].used = 1;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-  UNLOCK_COMMAND(&alloc_lock);
+-#else
+-  blas_unlock(&memory[position].lock);
+-#endif
+ 
+   if (!memory[position].addr) {
+     do {
+@@ -1148,14 +1086,14 @@ void *blas_memory_alloc(int procpos){
+ 
+ #ifdef ALLOC_DEVICEDRIVER
+ 	if ((*func ==  alloc_devicedirver) && (map_address == (void *)-1)) {
+-	    fprintf(stderr, "OpenBLAS Warning ... Physically contigous allocation was failed.\n");
++	    fprintf(stderr, "OpenBLAS Warning ... Physically contiguous allocation failed.\n");
+ 	}
+ #endif
+ 
+ #ifdef ALLOC_HUGETLBFILE
+ 	if ((*func == alloc_hugetlbfile) && (map_address == (void *)-1)) {
+ #ifndef OS_WINDOWS
+-	    fprintf(stderr, "OpenBLAS Warning ... HugeTLB(File) allocation was failed.\n");
++	    fprintf(stderr, "OpenBLAS Warning ... HugeTLB(File) allocation failed.\n");
+ #endif
+ 	}
+ #endif
+@@ -1176,44 +1114,13 @@ void *blas_memory_alloc(int procpos){
+ 
+     } while ((BLASLONG)map_address == -1);
+ 
+-#if defined(SMP) && !defined(USE_OPENMP)
+-    LOCK_COMMAND(&alloc_lock);
+-#endif    
+     memory[position].addr = map_address;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-    UNLOCK_COMMAND(&alloc_lock);
+-#endif
+ 
+ #ifdef DEBUG
+     printf("  Mapping Succeeded. %p(%d)\n", (void *)memory[position].addr, position);
+ #endif
+   }
+ 
+-#if defined(WHEREAMI) && !defined(USE_OPENMP)
+-
+-  if (memory[position].pos == -1) memory[position].pos = mypos;
+-
+-#endif
+-
+-#ifdef DYNAMIC_ARCH
+-
+-  if (memory_initialized == 1) {
+-
+-    LOCK_COMMAND(&alloc_lock);
+-
+-    if (memory_initialized == 1) {
+-
+-      if (!gotoblas) gotoblas_dynamic_init();
+-
+-      memory_initialized = 2;
+-    }
+-
+-    UNLOCK_COMMAND(&alloc_lock);
+-
+-  }
+-#endif
+-
+-
+ #ifdef DEBUG
+   printf("Mapped   : %p  %3d\n\n",
+ 	  (void *)memory[position].addr, position);
+@@ -1222,7 +1129,7 @@ void *blas_memory_alloc(int procpos){
+   return (void *)memory[position].addr;
+ 
+  error:
+-  printf("BLAS : Program is Terminated. Because you tried to allocate too many memory regions.\n");
++  printf("OpenBLAS : Program will terminate because you tried to allocate too many memory regions.\n");
+ 
+   return NULL;
+ }
+@@ -1236,10 +1143,7 @@ void blas_memory_free(void *free_area){
+ #endif
+ 
+   position = 0;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-  LOCK_COMMAND(&alloc_lock);
+-#endif
+-  while ((position < NUM_BUFFERS) && (memory[position].addr != free_area))
++  while ((position < BUFFERS_PER_THREAD) && (memory[position].addr != free_area))
+     position++;
+ 
+   if (memory[position].addr != free_area) goto error;
+@@ -1248,13 +1152,7 @@ void blas_memory_free(void *free_area){
+   printf("  Position : %d\n", position);
+ #endif
+ 
+-  // arm: ensure all writes are finished before other thread takes this memory
+-  WMB;
+-
+   memory[position].used = 0;
+-#if defined(SMP) && !defined(USE_OPENMP)
+-  UNLOCK_COMMAND(&alloc_lock);
+-#endif
+ 
+ #ifdef DEBUG
+   printf("Unmap Succeeded.\n\n");
+@@ -1266,11 +1164,8 @@ void blas_memory_free(void *free_area){
+   printf("BLAS : Bad memory unallocation! : %4d  %p\n", position,  free_area);
+ 
+ #ifdef DEBUG
+-  for (position = 0; position < NUM_BUFFERS; position++)
++  for (position = 0; position < BUFFERS_PER_THREAD; position++)
+     printf("%4ld  %p : %d\n", position, memory[position].addr, memory[position].used);
+-#endif
+-#if defined(SMP) && !defined(USE_OPENMP)
+-  UNLOCK_COMMAND(&alloc_lock);
+ #endif
+   return;
+ }
+@@ -1293,8 +1188,6 @@ void blas_shutdown(void){
+   BLASFUNC(blas_thread_shutdown)();
+ #endif
+ 
+-  LOCK_COMMAND(&alloc_lock);
+-
+   for (pos = 0; pos < release_pos; pos ++) {
+     release_info[pos].func(&release_info[pos]);
+   }
+@@ -1305,17 +1198,11 @@ void blas_shutdown(void){
+   base_address      = BASE_ADDRESS;
+ #endif
+ 
+-  for (pos = 0; pos < NUM_BUFFERS; pos ++){
++  for (pos = 0; pos < BUFFERS_PER_THREAD; pos ++){
+     memory[pos].addr   = (void *)0;
+     memory[pos].used   = 0;
+-#if defined(WHEREAMI) && !defined(USE_OPENMP)
+-    memory[pos].pos    = -1;
+-#endif
+-    memory[pos].lock   = 0;
+   }
+ 
+-  UNLOCK_COMMAND(&alloc_lock);
+-
+   return;
+ }
+ 
