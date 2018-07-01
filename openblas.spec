@@ -1,19 +1,15 @@
 Name     : openblas
-Version  : 0.3.0
+Version  : 0.3.1
 Release  : 78
 URL      : http://www.openblas.net/
-Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.0.tar.gz
+Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.1.tar.gz
 Summary  : The OpenBLAS linear algebra package
 Group    : Development/Tools
 License  : BSD-3-Clause
 
 Patch1: lto.patch
 Patch2: noyield.patch
-Patch3: locking.patch
 Patch4: generic-beta.patch
-Patch5: 0001-Initial-support-for-SkylakeX-AVX512.patch 
-Patch6: 0001-Use-AVX512-also-for-DGEMM.patch 
-Patch7: faster-threading.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -37,11 +33,7 @@ OpenBLAS is an optimized linear algebra library.
 %setup -q -n OpenBLAS-%{version}
 %patch1 -p1
 %patch2 -p1
-%patch3 -p1
 %patch4 -p1
-%patch5 -p1
-%patch6 -p1
-%patch7 -p1
 
 %build
 export AR=gcc-ar
@@ -120,27 +112,27 @@ popd
 /usr/lib64/pkgconfig/openblas.pc
 /usr/lib64/haswell/libopenblas.so
 /usr/lib64/haswell/libopenblas.so.0
-/usr/lib64/haswell/libopenblas_haswellp-r0.3.0.dev.so
+/usr/lib64/haswell/libopenblas_haswellp-r0.3.1.so
 %exclude /usr/lib64/haswell/cmake/openblas/OpenBLASConfig.cmake
 %exclude /usr/lib64/haswell/cmake/openblas/OpenBLASConfigVersion.cmake
 %exclude /usr/lib64/haswell/pkgconfig/openblas.pc
 /usr/lib64/haswell/avx512_1/libopenblas.so
 /usr/lib64/haswell/avx512_1/libopenblas.so.0
-/usr/lib64/haswell/avx512_1/libopenblas_skylakexp-r0.3.0.dev.so
+/usr/lib64/haswell/avx512_1/libopenblas_skylakexp-r0.3.1.so
 %exclude /usr/lib64/haswell/avx512_1/cmake/openblas/OpenBLASConfig.cmake
 %exclude /usr/lib64/haswell/avx512_1/cmake/openblas/OpenBLASConfigVersion.cmake
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
-/usr/lib64/libopenblas_nehalemp-r0.3.0.dev.so
+/usr/lib64/libopenblas_nehalemp-r0.3.1.so
 /usr/lib64/cmake/openblas/OpenBLASConfig.cmake
 /usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
 %exclude /usr/lib64/haswell/avx512_1/pkgconfig/openblas.pc
 
 %files staticdev
 /usr/lib64/haswell/libopenblas.a
-/usr/lib64/haswell/libopenblas_haswellp-r0.3.0.dev.a
+/usr/lib64/haswell/libopenblas_haswellp-r0.3.1.a
 /usr/lib64/haswell/avx512_1/libopenblas.a
-/usr/lib64/haswell/avx512_1/libopenblas_skylakexp-r0.3.0.dev.a
+/usr/lib64/haswell/avx512_1/libopenblas_skylakexp-r0.3.1.a
 /usr/lib64/libopenblas.a
-/usr/lib64/libopenblas_nehalemp-r0.3.0.dev.a
+/usr/lib64/libopenblas_nehalemp-r0.3.1.a
 
