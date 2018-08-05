@@ -1,3 +1,5 @@
+https://github.com/xianyi/OpenBLAS/pull/1712
+
 diff --git a/kernel/x86_64/daxpy_microk_haswell-2.c b/kernel/x86_64/daxpy_microk_haswell-2.c
 index bbe8b955..c2491ba9 100644
 --- a/kernel/x86_64/daxpy_microk_haswell-2.c
