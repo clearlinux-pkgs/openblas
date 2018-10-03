@@ -9,6 +9,7 @@ License  : BSD-3-Clause
 
 Patch1: lto.patch
 Patch2: noyield.patch
+Patch3: dgemm.patch
 Patch4: generic-beta.patch
 
 %package staticdev
@@ -33,6 +34,7 @@ OpenBLAS is an optimized linear algebra library.
 %setup -q -n OpenBLAS-%{version}
 %patch1 -p1
 %patch2 -p1
+%patch3 -p1
 %patch4 -p1
 
 %build
