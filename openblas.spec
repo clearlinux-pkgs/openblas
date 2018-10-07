@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.3.3
-Release  : 82
+Release  : 83
 URL      : http://www.openblas.net/
 Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.3.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -10,8 +10,7 @@ License  : BSD-3-Clause
 Patch1: lto.patch
 Patch2: noyield.patch
 Patch3: generic-beta.patch
-Patch4: dgemm.patch
-Patch5: 16x8.patch
+Patch4: avx512-gemm.patch
 
 %package staticdev
 Summary: fiiles for static linking

@@ -1,0 +1,6010 @@
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_beta_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/dgemm_beta_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_beta_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/dgemm_beta_skylakex.c	2018-10-07 17:22:14.962123264 +0000
+@@ -0,0 +1,150 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include "common.h"
++
++#include <immintrin.h>
++
++int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
++	  FLOAT *dummy2, BLASLONG dummy3, FLOAT *dummy4, BLASLONG dummy5,
++	  FLOAT *c, BLASLONG ldc){
++
++  BLASLONG i, j;
++  FLOAT *c_offset1, *c_offset;
++  FLOAT ctemp1, ctemp2, ctemp3, ctemp4;
++  FLOAT ctemp5, ctemp6, ctemp7, ctemp8;
++
++  /* fast path.. just zero the whole matrix */
++  if (m == ldc && (unsigned long)beta == (unsigned long)ZERO) {
++	memset(c, 0, m * n * sizeof(FLOAT));
++	return 0;
++  }
++
++
++  c_offset = c;
++
++  if (beta == ZERO){
++    __m512d z_zero;
++
++    z_zero = _mm512_setzero_pd();
++    j = n;
++    do {
++      c_offset1 = c_offset;
++      c_offset += ldc;
++
++      i = m;
++
++      while (i > 32) {
++	  _mm512_storeu_pd(c_offset1, z_zero);
++	  _mm512_storeu_pd(c_offset1 + 8, z_zero);
++	  _mm512_storeu_pd(c_offset1 + 16, z_zero);
++	  _mm512_storeu_pd(c_offset1 + 24 , z_zero);
++	  c_offset1 += 32;
++	  i -= 32;
++      }
++      while (i > 8) {
++	  _mm512_storeu_pd(c_offset1, z_zero);
++	  c_offset1 += 8;
++	  i -= 8;
++      }
++
++      while (i > 0) {
++	  *c_offset1 = ZERO;
++	  c_offset1 ++;
++	  i --;
++      }
++      j --;
++    } while (j > 0);
++
++  } else {
++
++    j = n;
++    do {
++      c_offset1 = c_offset;
++      c_offset += ldc;
++
++      i = (m >> 3);
++      if (i > 0){
++	do {
++	  ctemp1 = *(c_offset1 + 0);
++	  ctemp2 = *(c_offset1 + 1);
++	  ctemp3 = *(c_offset1 + 2);
++	  ctemp4 = *(c_offset1 + 3);
++	  ctemp5 = *(c_offset1 + 4);
++	  ctemp6 = *(c_offset1 + 5);
++	  ctemp7 = *(c_offset1 + 6);
++	  ctemp8 = *(c_offset1 + 7);
++
++	  ctemp1 *= beta;
++	  ctemp2 *= beta;
++	  ctemp3 *= beta;
++	  ctemp4 *= beta;
++	  ctemp5 *= beta;
++	  ctemp6 *= beta;
++	  ctemp7 *= beta;
++	  ctemp8 *= beta;
++
++	  *(c_offset1 + 0) = ctemp1;
++	  *(c_offset1 + 1) = ctemp2;
++	  *(c_offset1 + 2) = ctemp3;
++	  *(c_offset1 + 3) = ctemp4;
++	  *(c_offset1 + 4) = ctemp5;
++	  *(c_offset1 + 5) = ctemp6;
++	  *(c_offset1 + 6) = ctemp7;
++	  *(c_offset1 + 7) = ctemp8;
++	  c_offset1 += 8;
++	  i --;
++	} while (i > 0);
++      }
++
++      i = (m & 7);
++      if (i > 0){
++	do {
++	  ctemp1 = *c_offset1;
++	  ctemp1 *= beta;
++	  *c_offset1 = ctemp1;
++	  c_offset1 ++;
++	  i --;
++	} while (i > 0);
++      }
++      j --;
++    } while (j > 0);
++
++  }
++  return 0;
++};
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_kernel_4x8_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/dgemm_kernel_4x8_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_kernel_4x8_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/dgemm_kernel_4x8_skylakex.c	2018-10-07 17:22:14.962123264 +0000
+@@ -0,0 +1,1565 @@
++/*********************************************************************************
++Copyright (c) 2015, The OpenBLAS Project
++All rights reserved.
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are
++met:
++1. Redistributions of source code must retain the above copyright
++notice, this list of conditions and the following disclaimer.
++2. Redistributions in binary form must reproduce the above copyright
++notice, this list of conditions and the following disclaimer in
++the documentation and/or other materials provided with the
++distribution.
++3. Neither the name of the OpenBLAS project nor the names of
++its contributors may be used to endorse or promote products
++derived from this software without specific prior written permission.
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ARE DISCLAIMED. IN NO EVENT SHALL THE OPENBLAS PROJECT OR CONTRIBUTORS BE
++LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
++USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++**********************************************************************************/
++
++/*
++ * This file is based on dgemm_kernel_4x8_haswell.s (original copyright above).
++ * The content got translated from ASM to C+intrinsics, significantly simplified,
++ * and AVX512 support added by Arjan van de Ven <arjan@linux.intel.com>
++ */
++
++
++#include "common.h"
++#include <immintrin.h>
++
++
++/*******************************************************************************************
++* Macro definitions
++*******************************************************************************************/
++
++
++/******************************************************************************************/
++
++
++#define INIT4x8()				\
++	ymm4 = _mm256_setzero_pd();		\
++	ymm5 = _mm256_setzero_pd();		\
++	ymm6 = _mm256_setzero_pd();		\
++	ymm7 = _mm256_setzero_pd();		\
++	ymm8 = _mm256_setzero_pd();		\
++	ymm9 = _mm256_setzero_pd();		\
++	ymm10 = _mm256_setzero_pd();		\
++	ymm11 = _mm256_setzero_pd();		\
++
++
++#define KERNEL4x8_SUB()				\
++	ymm0  = _mm256_loadu_pd(AO - 16);	\
++/*	ymm0 [ A B C D ] */			\
++	ymm1  = _mm256_loadu_pd(BO - 12);	\
++	ymm2  = _mm256_loadu_pd(BO - 8);	\
++/* 	ymm1 [ 1 2 3 4 ] */			\
++/* 	ymm2 [ 5 6 7 8 ] */			\
++						\
++	ymm4 += ymm0 * ymm1;			\
++/*	ymm4 +=  [ A*1 | B*2 | C*3 | D*4 ] */	\
++	ymm8 += ymm0 * ymm2;			\
++/*	ymm8 +=  [ A*5 | B*6 | C*7 | D*8 ] */   \
++						\
++	ymm0  = _mm256_permute4x64_pd(ymm0, 0xb1);	\
++/*	ymm0 [ B A D C ] */			\
++	ymm5 += ymm0 * ymm1;			\
++/*	ymm5 +=  [ B*1 | A*2 | D*3 | C*4 ] */	\
++	ymm9 += ymm0 * ymm2;			\
++/*	ymm9 +=  [ B*5 | A*6 | D*7 | C*8 ] */	\
++						\
++	ymm0  = _mm256_permute4x64_pd(ymm0, 0x1b);	\
++/*	ymm0 [ C D A B ]] */ 			\
++	ymm6 += ymm0 * ymm1;			\
++/*	ymm6 +=  [ C*1 | D*2 | A*3 | B*4 ] */ 	\
++	ymm10+= ymm0 * ymm2;			\
++/*	ymm10 += [ C*5 | D*6 | A*7 | B*8 ] */ 	\
++						\
++	ymm0  = _mm256_permute4x64_pd(ymm0, 0xb1);	\
++/*	ymm0 [ D C B A ] */			\
++	ymm7 += ymm0 * ymm1;			\
++/*	ymm7  += [ D*1 | C*2 | B*3 | A*4 ] */	\
++	ymm11+= ymm0 * ymm2;			\
++/*	ymm11 += [ D*5 | C*6 | B*7 | A*8 ] */	\
++	AO += 4;				\
++	BO += 8;
++
++
++#define SAVE4x8(ALPHA)					\
++	ymm0 = _mm256_set1_pd(ALPHA);			\
++	ymm4 *= ymm0;					\
++	ymm5 *= ymm0;					\
++	ymm6 *= ymm0;					\
++	ymm7 *= ymm0;					\
++	ymm8 *= ymm0;					\
++	ymm9 *= ymm0;					\
++	ymm10 *= ymm0;					\
++	ymm11 *= ymm0;					\
++							\
++/*	Entry values:  			    */		\
++/*	ymm4  = a [ A*1 | B*2 | C*3 | D*4 ] */		\
++/*	ymm5  = a [ B*1 | A*2 | D*3 | C*4 ] */		\
++/*	ymm6  = a [ C*1 | D*2 | A*3 | B*4 ] */ 		\
++/*	ymm7  = a [ D*1 | C*2 | B*3 | A*4 ] */		\
++/*	ymm8  = a [ A*5 | B*6 | C*7 | D*8 ] */		\
++/*	ymm9  = a [ B*5 | A*6 | D*7 | C*8 ] */		\
++/*	ymm10 = a [ C*5 | D*6 | A*7 | B*8 ] */ 		\
++/*	ymm11 = a [ D*5 | C*6 | B*7 | A*8 ] */		\
++							\
++	ymm5 = _mm256_permute4x64_pd(ymm5, 0xb1);	\
++/*	ymm5 =  a [ A*2 | B*1 | C*4 | D*3 ] */		\
++	ymm7 = _mm256_permute4x64_pd(ymm7, 0xb1);	\
++/*	ymm7 =  a [ C*2 | D*1 | A*4 | B*3 ] */		\
++							\
++	ymm0 = _mm256_blend_pd(ymm4, ymm5, 0x0a);	\
++	ymm1 = _mm256_blend_pd(ymm4, ymm5, 0x05);	\
++/*	ymm0 =  a [ A*1 | B*1 | C*3 | D*3 ] */		\
++/*	ymm1 =  a [ A*2 | B*2 | C*4 | D*4 ] */		\
++	ymm2 = _mm256_blend_pd(ymm6, ymm7, 0x0a);	\
++	ymm3 = _mm256_blend_pd(ymm6, ymm7, 0x05);	\
++/*	ymm2 =  a [ C*1 | D*1 | A*3 | B*3 ] */		\
++/*	ymm3 =  a [ C*2 | D*2 | A*4 | B*4 ] */		\
++							\
++	ymm2 = _mm256_permute4x64_pd(ymm2, 0x1b);	\
++	ymm3 = _mm256_permute4x64_pd(ymm3, 0x1b);	\
++/*	ymm2 =  a [ B*3 | A*3 | D*1 | C*1 ] */		\
++/*	ymm3 =  a [ B*4 | A*4 | D*2 | C*2 ] */		\
++	ymm2 = _mm256_permute4x64_pd(ymm2, 0xb1);	\
++	ymm3 = _mm256_permute4x64_pd(ymm3, 0xb1);	\
++/*	ymm2 =  a [ A*3 | B*3 | C*1 | D*1 ] */		\
++/*	ymm3 =  a [ A*4 | B*4 | C*2 | D*2 ] */		\
++							\
++	ymm4 = _mm256_blend_pd(ymm2, ymm0, 0x03);	\
++	ymm5 = _mm256_blend_pd(ymm3, ymm1, 0x03);	\
++/*	ymm4 =  a [ A*1 | B*1 | C*1 | D*1 ] */		\
++/*	ymm5 =  a [ A*2 | B*2 | C*2 | D*2 ] */		\
++	ymm6 = _mm256_blend_pd(ymm0, ymm2, 0x03);	\
++	ymm7 = _mm256_blend_pd(ymm1, ymm3, 0x03);	\
++/*	ymm5 =  a [ A*3 | B*3 | C*3 | D*3 ] */		\
++/*	ymm7 =  a [ A*4 | B*4 | C*4 | D*4 ] */		\
++							\
++	ymm4 += _mm256_loadu_pd(CO1 + (0 * ldc));	\
++	ymm5 += _mm256_loadu_pd(CO1 + (1 * ldc));	\
++	ymm6 += _mm256_loadu_pd(CO1 + (2 * ldc));	\
++	ymm7 += _mm256_loadu_pd(CO1 + (3 * ldc));	\
++	_mm256_storeu_pd(CO1 + (0 * ldc), ymm4);	\
++	_mm256_storeu_pd(CO1 + (1 * ldc), ymm5);	\
++	_mm256_storeu_pd(CO1 + (2 * ldc), ymm6);	\
++	_mm256_storeu_pd(CO1 + (3 * ldc), ymm7);	\
++							\
++	ymm9 = _mm256_permute4x64_pd(ymm9, 0xb1);	\
++	ymm11 = _mm256_permute4x64_pd(ymm11, 0xb1);	\
++							\
++	ymm0 = _mm256_blend_pd(ymm8, ymm9, 0x0a);	\
++	ymm1 = _mm256_blend_pd(ymm8, ymm9, 0x05);	\
++	ymm2 = _mm256_blend_pd(ymm10, ymm11, 0x0a);	\
++	ymm3 = _mm256_blend_pd(ymm10, ymm11, 0x05);	\
++							\
++	ymm2 = _mm256_permute4x64_pd(ymm2, 0x1b);	\
++	ymm3 = _mm256_permute4x64_pd(ymm3, 0x1b);	\
++	ymm2 = _mm256_permute4x64_pd(ymm2, 0xb1);	\
++	ymm3 = _mm256_permute4x64_pd(ymm3, 0xb1);	\
++							\
++	ymm4 = _mm256_blend_pd(ymm2, ymm0, 0x03);	\
++	ymm5 = _mm256_blend_pd(ymm3, ymm1, 0x03);	\
++	ymm6 = _mm256_blend_pd(ymm0, ymm2, 0x03);	\
++	ymm7 = _mm256_blend_pd(ymm1, ymm3, 0x03);	\
++							\
++	ymm4 += _mm256_loadu_pd(CO1 + (4 * ldc));	\
++	ymm5 += _mm256_loadu_pd(CO1 + (5 * ldc));	\
++	ymm6 += _mm256_loadu_pd(CO1 + (6 * ldc));	\
++	ymm7 += _mm256_loadu_pd(CO1 + (7 * ldc));	\
++	_mm256_storeu_pd(CO1 + (4 * ldc), ymm4);	\
++	_mm256_storeu_pd(CO1 + (5 * ldc), ymm5);	\
++	_mm256_storeu_pd(CO1 + (6 * ldc), ymm6);	\
++	_mm256_storeu_pd(CO1 + (7 * ldc), ymm7);	\
++							\
++	CO1 += 4;
++
++/******************************************************************************************/
++
++#define INIT2x8()				\
++	xmm4 = _mm_setzero_pd(); 		\
++	xmm5 = _mm_setzero_pd(); 		\
++	xmm6 = _mm_setzero_pd(); 		\
++	xmm7 = _mm_setzero_pd(); 		\
++	xmm8 = _mm_setzero_pd(); 		\
++	xmm9 = _mm_setzero_pd(); 		\
++	xmm10 = _mm_setzero_pd(); 		\
++	xmm11 = _mm_setzero_pd(); 		\
++
++
++#define KERNEL2x8_SUB()				\
++	xmm0 = _mm_loadu_pd(AO - 16);		\
++	xmm1 = _mm_set1_pd(*(BO - 12));		\
++	xmm2 = _mm_set1_pd(*(BO - 11));		\
++	xmm3 = _mm_set1_pd(*(BO - 10));		\
++	xmm4 += xmm0 * xmm1;			\
++	xmm1 = _mm_set1_pd(*(BO - 9));		\
++	xmm5 += xmm0 * xmm2;			\
++	xmm2 = _mm_set1_pd(*(BO - 8));		\
++	xmm6 += xmm0 * xmm3;			\
++	xmm3 = _mm_set1_pd(*(BO - 7));		\
++	xmm7 += xmm0 * xmm1;			\
++	xmm1 = _mm_set1_pd(*(BO - 6));		\
++	xmm8 += xmm0 * xmm2;			\
++	xmm2 = _mm_set1_pd(*(BO - 5));		\
++	xmm9 += xmm0 * xmm3;			\
++	xmm10 += xmm0 * xmm1;			\
++	xmm11 += xmm0 * xmm2;			\
++	BO += 8;				\
++	AO += 2;
++
++#define  SAVE2x8(ALPHA)					\
++	xmm0 = _mm_set1_pd(ALPHA);			\
++	xmm4 *= xmm0;					\
++	xmm5 *= xmm0;					\
++	xmm6 *= xmm0;					\
++	xmm7 *= xmm0;					\
++	xmm8 *= xmm0;					\
++	xmm9 *= xmm0;					\
++	xmm10 *= xmm0;					\
++	xmm11 *= xmm0;					\
++							\
++	xmm4 += _mm_loadu_pd(CO1 + (0 * ldc));		\
++	xmm5 += _mm_loadu_pd(CO1 + (1 * ldc));		\
++	xmm6 += _mm_loadu_pd(CO1 + (2 * ldc));		\
++	xmm7 += _mm_loadu_pd(CO1 + (3 * ldc));		\
++							\
++	_mm_storeu_pd(CO1 + (0 * ldc), xmm4);		\
++	_mm_storeu_pd(CO1 + (1 * ldc), xmm5);		\
++	_mm_storeu_pd(CO1 + (2 * ldc), xmm6);		\
++	_mm_storeu_pd(CO1 + (3 * ldc), xmm7);		\
++							\
++	xmm8 += _mm_loadu_pd(CO1 + (4 * ldc));		\
++	xmm9 += _mm_loadu_pd(CO1 + (5 * ldc));		\
++	xmm10+= _mm_loadu_pd(CO1 + (6 * ldc));		\
++	xmm11+= _mm_loadu_pd(CO1 + (7 * ldc));		\
++	_mm_storeu_pd(CO1 + (4 * ldc), xmm8);		\
++	_mm_storeu_pd(CO1 + (5 * ldc), xmm9);		\
++	_mm_storeu_pd(CO1 + (6 * ldc), xmm10);		\
++	_mm_storeu_pd(CO1 + (7 * ldc), xmm11);		\
++	CO1 += 2;
++
++
++
++
++/******************************************************************************************/
++
++#define INIT1x8()				\
++	dbl4 = 0;	\
++	dbl5 = 0;	\
++	dbl6 = 0;	\
++	dbl7 = 0;	\
++	dbl8 = 0;	\
++	dbl9 = 0;	\
++	dbl10 = 0;	\
++	dbl11 = 0;	
++
++
++#define KERNEL1x8_SUB()				\
++	dbl0 = *(AO - 16);			\
++	dbl1 = *(BO - 12);			\
++	dbl2 = *(BO - 11);			\
++	dbl3 = *(BO - 10);			\
++	dbl4 += dbl0 * dbl1;			\
++	dbl1 = *(BO - 9);			\
++	dbl5 += dbl0 * dbl2;			\
++	dbl2 = *(BO - 8);			\
++	dbl6 += dbl0 * dbl3;			\
++	dbl3 = *(BO - 7);			\
++	dbl7 += dbl0 * dbl1;			\
++	dbl1 = *(BO - 6);			\
++	dbl8 += dbl0 * dbl2;			\
++	dbl2 = *(BO - 5);			\
++	dbl9  += dbl0 * dbl3;			\
++	dbl10 += dbl0 * dbl1;			\
++	dbl11 += dbl0 * dbl2;			\
++	BO += 8;				\
++	AO += 1;
++
++
++#define SAVE1x8(ALPHA)				\
++	dbl0 = ALPHA;				\
++	dbl4 *= dbl0;				\
++	dbl5 *= dbl0;				\
++	dbl6 *= dbl0;				\
++	dbl7 *= dbl0;				\
++	dbl8 *= dbl0;				\
++	dbl9 *= dbl0;				\
++	dbl10 *= dbl0;				\
++	dbl11 *= dbl0;				\
++						\
++	dbl4 += *(CO1 + (0 * ldc));		\
++	dbl5 += *(CO1 + (1 * ldc));		\
++	dbl6 += *(CO1 + (2 * ldc));		\
++	dbl7 += *(CO1 + (3 * ldc));		\
++	*(CO1 + (0 * ldc)) = dbl4;		\
++	*(CO1 + (1 * ldc)) = dbl5;		\
++	*(CO1 + (2 * ldc)) = dbl6;		\
++	*(CO1 + (3 * ldc)) = dbl7;		\
++						\
++	dbl8  += *(CO1 + (4 * ldc));		\
++	dbl9  += *(CO1 + (5 * ldc));		\
++	dbl10 += *(CO1 + (6 * ldc));		\
++	dbl11 += *(CO1 + (7 * ldc));		\
++	*(CO1 + (4 * ldc)) = dbl8;		\
++	*(CO1 + (5 * ldc)) = dbl9;		\
++	*(CO1 + (6 * ldc)) = dbl10;		\
++	*(CO1 + (7 * ldc)) = dbl11;		\
++						\
++	CO1 += 1;
++
++
++
++
++
++
++/******************************************************************************************/
++
++#define INIT4x4()				\
++	ymm4 = _mm256_setzero_pd();		\
++	ymm5 = _mm256_setzero_pd();		\
++	ymm6 = _mm256_setzero_pd();		\
++	ymm7 = _mm256_setzero_pd();		\
++
++
++#define KERNEL4x4_SUB() 				\
++	ymm0  = _mm256_loadu_pd(AO - 16);		\
++	ymm1  = _mm256_broadcastsd_pd(_mm_load_sd(BO - 12));	\
++							\
++	ymm4 += ymm0 * ymm1;				\
++							\
++	ymm1  = _mm256_broadcastsd_pd(_mm_load_sd(BO - 11));	\
++	ymm5 += ymm0 * ymm1;				\
++							\
++	ymm1  = _mm256_broadcastsd_pd(_mm_load_sd(BO - 10));	\
++	ymm6 += ymm0 * ymm1;				\
++							\
++	ymm1  = _mm256_broadcastsd_pd(_mm_load_sd(BO - 9));	\
++	ymm7 += ymm0 * ymm1;				\
++	AO += 4;					\
++	BO += 4;
++
++
++#define SAVE4x4(ALPHA)					\
++	ymm0 = _mm256_set1_pd(ALPHA);			\
++	ymm4 *= ymm0;					\
++	ymm5 *= ymm0;					\
++	ymm6 *= ymm0;					\
++	ymm7 *= ymm0;					\
++							\
++	ymm4 += _mm256_loadu_pd(CO1 + (0 * ldc));	\
++	ymm5 += _mm256_loadu_pd(CO1 + (1 * ldc));	\
++	ymm6 += _mm256_loadu_pd(CO1 + (2 * ldc));	\
++	ymm7 += _mm256_loadu_pd(CO1 + (3 * ldc));	\
++	_mm256_storeu_pd(CO1 + (0 * ldc), ymm4);	\
++	_mm256_storeu_pd(CO1 + (1 * ldc), ymm5);	\
++	_mm256_storeu_pd(CO1 + (2 * ldc), ymm6);	\
++	_mm256_storeu_pd(CO1 + (3 * ldc), ymm7);	\
++							\
++	CO1 += 4;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define  INIT2x4()				\
++	xmm4 = _mm_setzero_pd(); 		\
++	xmm5 = _mm_setzero_pd(); 		\
++	xmm6 = _mm_setzero_pd(); 		\
++	xmm7 = _mm_setzero_pd(); 		\
++
++
++
++#define KERNEL2x4_SUB()				\
++	xmm0 = _mm_loadu_pd(AO - 16);		\
++	xmm1 = _mm_set1_pd(*(BO - 12));		\
++	xmm2 = _mm_set1_pd(*(BO - 11));		\
++	xmm3 = _mm_set1_pd(*(BO - 10));		\
++	xmm4 += xmm0 * xmm1;			\
++	xmm1 = _mm_set1_pd(*(BO - 9));		\
++	xmm5 += xmm0 * xmm2;			\
++	xmm6 += xmm0 * xmm3;			\
++	xmm7 += xmm0 * xmm1;			\
++	BO += 4;				\
++	AO += 2;
++
++
++
++#define  SAVE2x4(ALPHA)					\
++	xmm0 = _mm_set1_pd(ALPHA);			\
++	xmm4 *= xmm0;					\
++	xmm5 *= xmm0;					\
++	xmm6 *= xmm0;					\
++	xmm7 *= xmm0;					\
++							\
++	xmm4 += _mm_loadu_pd(CO1 + (0 * ldc));	\
++	xmm5 += _mm_loadu_pd(CO1 + (1 * ldc));	\
++	xmm6 += _mm_loadu_pd(CO1 + (2 * ldc));	\
++	xmm7 += _mm_loadu_pd(CO1 + (3 * ldc));	\
++							\
++	_mm_storeu_pd(CO1 + (0 * ldc), xmm4);		\
++	_mm_storeu_pd(CO1 + (1 * ldc), xmm5);		\
++	_mm_storeu_pd(CO1 + (2 * ldc), xmm6);		\
++	_mm_storeu_pd(CO1 + (3 * ldc), xmm7);		\
++							\
++	CO1 += 2;
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define  INIT1x4()		\
++	dbl4 = 0; 		\
++	dbl5 = 0; 		\
++	dbl6 = 0; 		\
++	dbl7 = 0; 		\
++
++#define KERNEL1x4_SUB()				\
++	dbl0 = *(AO - 16);			\
++	dbl1 = *(BO - 12);			\
++	dbl2 = *(BO - 11);			\
++	dbl3 = *(BO - 10);			\
++	dbl8  = *(BO - 9);			\
++						\
++	dbl4 += dbl0 * dbl1;			\
++	dbl5 += dbl0 * dbl2;			\
++	dbl6 += dbl0 * dbl3;			\
++	dbl7 += dbl0 * dbl8;			\
++	BO += 4;				\
++	AO += 1;
++
++
++#define SAVE1x4(ALPHA)				\
++	dbl0 = ALPHA;				\
++	dbl4 *= dbl0;				\
++	dbl5 *= dbl0;				\
++	dbl6 *= dbl0;				\
++	dbl7 *= dbl0;				\
++						\
++	dbl4 += *(CO1 + (0 * ldc));		\
++	dbl5 += *(CO1 + (1 * ldc));		\
++	dbl6 += *(CO1 + (2 * ldc));		\
++	dbl7 += *(CO1 + (3 * ldc));		\
++	*(CO1 + (0 * ldc)) = dbl4;		\
++	*(CO1 + (1 * ldc)) = dbl5;		\
++	*(CO1 + (2 * ldc)) = dbl6;		\
++	*(CO1 + (3 * ldc)) = dbl7;		\
++						\
++						\
++	CO1 += 1;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define  INIT8x4()				\
++	ymm10 = _mm256_setzero_pd(); 		\
++	ymm11 = _mm256_setzero_pd(); 		\
++	ymm12 = _mm256_setzero_pd(); 		\
++	ymm13 = _mm256_setzero_pd(); 		\
++	ymm14 = _mm256_setzero_pd(); 		\
++	ymm15 = _mm256_setzero_pd(); 		\
++	ymm16 = _mm256_setzero_pd(); 		\
++	ymm17 = _mm256_setzero_pd(); 		\
++
++
++#define KERNEL8x4_SUB()				\
++	ymm0 = _mm256_loadu_pd(AO - 16);	\
++	ymm1 = _mm256_loadu_pd(AO - 12);	\
++	ymm2 = _mm256_set1_pd(*(BO - 12));	\
++	ymm3 = _mm256_set1_pd(*(BO - 11));	\
++	ymm4 = _mm256_set1_pd(*(BO - 10));	\
++	ymm5 = _mm256_set1_pd(*(BO - 9));	\
++	ymm10 += ymm0 * ymm2;			\
++	ymm11 += ymm1 * ymm2;			\
++	ymm12 += ymm0 * ymm3;			\
++	ymm13 += ymm1 * ymm3;			\
++	ymm14 += ymm0 * ymm4;			\
++	ymm15 += ymm1 * ymm4;			\
++	ymm16 += ymm0 * ymm5;			\
++	ymm17 += ymm1 * ymm5;			\
++	BO += 4;				\
++	AO += 8;
++
++
++
++#define SAVE8x4(ALPHA)					\
++	ymm0 = _mm256_set1_pd(ALPHA);			\
++	ymm10 *= ymm0;					\
++	ymm11 *= ymm0;					\
++	ymm12 *= ymm0;					\
++	ymm13 *= ymm0;					\
++	ymm14 *= ymm0;					\
++	ymm15 *= ymm0;					\
++	ymm16 *= ymm0;					\
++	ymm17 *= ymm0;					\
++							\
++	ymm10 += _mm256_loadu_pd(CO1);			\
++	ymm11 += _mm256_loadu_pd(CO1 + 4);		\
++	ymm12 += _mm256_loadu_pd(CO1 + (ldc));		\
++	ymm13 += _mm256_loadu_pd(CO1 + (ldc) + 4);	\
++	ymm14 += _mm256_loadu_pd(CO1 + (ldc*2));	\
++	ymm15 += _mm256_loadu_pd(CO1 + (ldc*2) + 4);	\
++	ymm16 += _mm256_loadu_pd(CO1 + (ldc*3));	\
++	ymm17 += _mm256_loadu_pd(CO1 + (ldc*3) + 4);	\
++							\
++	_mm256_storeu_pd(CO1, ymm10);			\
++	_mm256_storeu_pd(CO1 + 4, ymm11);		\
++	_mm256_storeu_pd(CO1 + ldc, ymm12);		\
++	_mm256_storeu_pd(CO1 + ldc + 4, ymm13);		\
++	_mm256_storeu_pd(CO1 + ldc*2, ymm14);		\
++	_mm256_storeu_pd(CO1 + ldc*2 + 4, ymm15);	\
++	_mm256_storeu_pd(CO1 + ldc*3, ymm16);		\
++	_mm256_storeu_pd(CO1 + ldc*3 + 4, ymm17);	\
++							\
++	CO1 += 8;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++#define  INIT8x2()				\
++	ymm4 = _mm256_setzero_pd(); 		\
++	ymm5 = _mm256_setzero_pd(); 		\
++	ymm6 = _mm256_setzero_pd(); 		\
++	ymm7 = _mm256_setzero_pd(); 		\
++
++
++#define KERNEL8x2_SUB()				\
++	ymm0 = _mm256_loadu_pd(AO - 16);	\
++	ymm1 = _mm256_loadu_pd(AO - 12);	\
++	ymm2 = _mm256_set1_pd(*(BO - 12));	\
++	ymm3 = _mm256_set1_pd(*(BO - 11));	\
++	ymm4 += ymm0 * ymm2;			\
++	ymm5 += ymm1 * ymm2;			\
++	ymm6 += ymm0 * ymm3;			\
++	ymm7 += ymm1 * ymm3;			\
++	BO += 2;				\
++	AO += 8;
++
++
++
++#define SAVE8x2(ALPHA)					\
++	ymm0 = _mm256_set1_pd(ALPHA);			\
++	ymm4 *= ymm0;					\
++	ymm5 *= ymm0;					\
++	ymm6 *= ymm0;					\
++	ymm7 *= ymm0;					\
++							\
++	ymm4 += _mm256_loadu_pd(CO1);			\
++	ymm5 += _mm256_loadu_pd(CO1 + 4);		\
++	ymm6 += _mm256_loadu_pd(CO1 + (ldc));		\
++	ymm7 += _mm256_loadu_pd(CO1 + (ldc) + 4);	\
++							\
++	_mm256_storeu_pd(CO1, ymm4);			\
++	_mm256_storeu_pd(CO1 + 4, ymm5);		\
++	_mm256_storeu_pd(CO1 + ldc, ymm6);		\
++	_mm256_storeu_pd(CO1 + ldc + 4, ymm7);		\
++							\
++	CO1 += 8;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++#define  INIT4x2()				\
++	xmm4 = _mm_setzero_pd(); 		\
++	xmm5 = _mm_setzero_pd(); 		\
++	xmm6 = _mm_setzero_pd(); 		\
++	xmm7 = _mm_setzero_pd(); 		\
++
++
++#define KERNEL4x2_SUB()				\
++	xmm0 = _mm_loadu_pd(AO - 16);		\
++	xmm1 = _mm_loadu_pd(AO - 14);		\
++	xmm2 = _mm_set1_pd(*(BO - 12));		\
++	xmm3 = _mm_set1_pd(*(BO - 11));		\
++	xmm4 += xmm0 * xmm2;			\
++	xmm5 += xmm1 * xmm2;			\
++	xmm6 += xmm0 * xmm3;			\
++	xmm7 += xmm1 * xmm3;			\
++	BO += 2;				\
++	AO += 4;
++
++
++
++#define SAVE4x2(ALPHA)					\
++	xmm0 = _mm_set1_pd(ALPHA);			\
++	xmm4 *= xmm0;					\
++	xmm5 *= xmm0;					\
++	xmm6 *= xmm0;					\
++	xmm7 *= xmm0;					\
++							\
++	xmm4 += _mm_loadu_pd(CO1);			\
++	xmm5 += _mm_loadu_pd(CO1 + 2);			\
++	xmm6 += _mm_loadu_pd(CO1 + (ldc));		\
++	xmm7 += _mm_loadu_pd(CO1 + (ldc) + 2);		\
++							\
++	_mm_storeu_pd(CO1, xmm4);			\
++	_mm_storeu_pd(CO1 + 2, xmm5);			\
++	_mm_storeu_pd(CO1 + ldc, xmm6);			\
++	_mm_storeu_pd(CO1 + ldc + 2, xmm7);		\
++							\
++	CO1 += 4;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define  INIT2x2()				\
++	xmm4 = _mm_setzero_pd(); 		\
++	xmm6 = _mm_setzero_pd(); 		\
++
++
++
++#define KERNEL2x2_SUB()				\
++	xmm2 = _mm_set1_pd(*(BO - 12));		\
++	xmm0 = _mm_loadu_pd(AO - 16);		\
++	xmm3 = _mm_set1_pd(*(BO - 11));		\
++	xmm4 += xmm0 * xmm2;			\
++	xmm6 += xmm0 * xmm3;			\
++	BO += 2;				\
++	AO += 2;
++
++
++#define  SAVE2x2(ALPHA)					\
++	xmm0 = _mm_set1_pd(ALPHA);			\
++	xmm4 *= xmm0;					\
++	xmm6 *= xmm0;					\
++							\
++	xmm4 += _mm_loadu_pd(CO1);			\
++	xmm6 += _mm_loadu_pd(CO1 + ldc);		\
++							\
++	_mm_storeu_pd(CO1, xmm4);			\
++	_mm_storeu_pd(CO1 + ldc, xmm6);			\
++							\
++	CO1 += 2;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define INIT1x2()				\
++	dbl4 = 0;				\
++	dbl5 = 0;			
++
++
++#define KERNEL1x2_SUB()				\
++	dbl0 = *(AO - 16);			\
++	dbl1 = *(BO - 12);			\
++	dbl2 = *(BO - 11);			\
++	dbl4 += dbl0 * dbl1;			\
++	dbl5 += dbl0 * dbl2;			\
++	BO += 2;				\
++	AO += 1;
++
++
++#define SAVE1x2(ALPHA)				\
++	dbl0 = ALPHA;				\
++	dbl4 *= dbl0;				\
++	dbl5 *= dbl0;				\
++						\
++	dbl4 += *(CO1 + (0 * ldc));		\
++	dbl5 += *(CO1 + (1 * ldc));		\
++	*(CO1 + (0 * ldc)) = dbl4;		\
++	*(CO1 + (1 * ldc)) = dbl5;		\
++						\
++						\
++	CO1 += 1;
++
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define INIT4x1()				\
++	ymm4 = _mm256_setzero_pd();		\
++	ymm5 = _mm256_setzero_pd();		\
++	ymm6 = _mm256_setzero_pd();		\
++	ymm7 = _mm256_setzero_pd();		
++
++
++#define KERNEL4x1()					\
++	ymm0 =  _mm256_set1_pd(*(BO - 12));		\
++	ymm1 =  _mm256_set1_pd(*(BO - 11));		\
++	ymm2 =  _mm256_set1_pd(*(BO - 10));		\
++	ymm3 =  _mm256_set1_pd(*(BO -  9));		\
++							\
++	ymm4 += _mm256_loadu_pd(AO - 16) * ymm0;	\
++	ymm5 += _mm256_loadu_pd(AO - 12) * ymm1;	\
++							\
++	ymm0 =  _mm256_set1_pd(*(BO - 8));		\
++	ymm1 =  _mm256_set1_pd(*(BO - 7));		\
++							\
++	ymm6 += _mm256_loadu_pd(AO - 8) * ymm2;		\
++	ymm7 += _mm256_loadu_pd(AO - 4) * ymm3;		\
++							\
++	ymm2 =  _mm256_set1_pd(*(BO - 6));		\
++	ymm3 =  _mm256_set1_pd(*(BO - 5));		\
++							\
++	ymm4 += _mm256_loadu_pd(AO + 0) * ymm0;		\
++	ymm5 += _mm256_loadu_pd(AO + 4) * ymm1;		\
++	ymm6 += _mm256_loadu_pd(AO + 8) * ymm2;		\
++	ymm7 += _mm256_loadu_pd(AO + 12) * ymm3;	\
++							\
++	BO += 8;					\
++	AO += 32;
++
++
++#define INIT8x1()				\
++	zmm4 = _mm512_setzero_pd();		\
++
++
++#define KERNEL8x1_SUB() 					\
++	zmm2 = _mm512_set1_pd(*(BO - 12));			\
++	zmm0 = _mm512_loadu_pd(AO - 16);			\
++	zmm4 += zmm0 * zmm2;					\
++	BO += 1;						\
++	AO += 8;
++
++
++#define SAVE8x1(ALPHA)						\
++	zmm0 = _mm512_set1_pd(ALPHA);				\
++	zmm4 *= zmm0;						\
++								\
++	zmm4 += _mm512_loadu_pd(CO1);				\
++	_mm512_storeu_pd(CO1, zmm4);				\
++	CO1 += 8;
++
++#define KERNEL4x1_SUB() 					\
++	ymm2 = _mm256_set1_pd(*(BO - 12));			\
++	ymm0 = _mm256_loadu_pd(AO - 16);			\
++	ymm4 += ymm0 * ymm2;					\
++	BO += 1;						\
++	AO += 4;
++
++
++#define SAVE4x1(ALPHA)						\
++	ymm0 = _mm256_set1_pd(ALPHA);				\
++	ymm4 += ymm5;						\
++	ymm6 += ymm7;						\
++	ymm4 += ymm6;						\
++	ymm4 *= ymm0;						\
++								\
++	ymm4 += _mm256_loadu_pd(CO1);				\
++	_mm256_storeu_pd(CO1, ymm4);				\
++	CO1 += 4;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define INIT2x1()					\
++	xmm4 = _mm_setzero_pd(); 		
++
++
++#define KERNEL2x1_SUB()				\
++	xmm2 = _mm_set1_pd(*(BO - 12));		\
++	xmm0 = _mm_loadu_pd(AO - 16);		\
++	xmm4 += xmm0 * xmm2;			\
++	BO += 1;				\
++	AO += 2;
++
++
++#define  SAVE2x1(ALPHA)					\
++	xmm0 = _mm_set1_pd(ALPHA);			\
++	xmm4 *= xmm0;					\
++							\
++	xmm4 += _mm_loadu_pd(CO1);			\
++							\
++	_mm_storeu_pd(CO1, xmm4);			\
++							\
++	CO1 += 2;
++
++
++/******************************************************************************************/
++/******************************************************************************************/
++
++#define INIT1x1()	\
++	dbl4 = 0;
++
++#define KERNEL1x1_SUB() \
++	dbl1 = *(BO - 12);	\
++	dbl0 = *(AO - 16);	\
++	dbl4 += dbl0 * dbl1;	\
++	BO += 1;		\
++	AO += 1;
++
++#define SAVE1x1(ALPHA)	\
++	dbl0 = ALPHA;	\
++	dbl4 *= dbl0; 	\
++	dbl4 += *CO1;	\
++	*CO1 = dbl4;	\
++	CO1 += 1;
++
++
++/*******************************************************************************************/
++
++/* START */
++
++
++int __attribute__ ((noinline))
++CNAME(BLASLONG m, BLASLONG n, BLASLONG k, double alpha, double * __restrict__ A, double * __restrict__ B, double * __restrict__ C, BLASLONG ldc)
++{
++	unsigned long M=m, N=n, K=k;
++
++	
++	if (M == 0)
++		return 0;
++	if (N == 0)
++		return 0;
++	if (K == 0)
++		return 0;
++
++	while (N >= 8) {
++		double *CO1;
++		double *AO;
++		int i;
++	
++		CO1 = C;
++		C += 8 * ldc;
++
++		AO = A + 16;
++
++		i = m;
++
++		while (i >= 24) {
++			double *BO;
++			double *A1, *A2;
++			int kloop = K;
++
++			BO = B + 12;
++			A1 = AO + 8 * K;
++			A2 = AO + 16 * K;
++			/*
++			 *  This is the inner loop for the hot hot path
++			 *  Written in inline asm because compilers like GCC 8 and earlier
++			 *  struggle with register allocation and are not good at using
++			 *  the AVX512 built in broadcast ability (1to8)
++			 */
++			asm(
++			"vxorpd  %%zmm1, %%zmm1, %%zmm1\n"
++			"vmovapd %%zmm1, %%zmm2\n"
++			"vmovapd %%zmm1, %%zmm3\n"
++			"vmovapd %%zmm1, %%zmm4\n"
++			"vmovapd %%zmm1, %%zmm5\n"
++			"vmovapd %%zmm1, %%zmm6\n"
++			"vmovapd %%zmm1, %%zmm7\n"
++			"vmovapd %%zmm1, %%zmm8\n"
++			"vmovapd %%zmm1, %%zmm11\n"
++			"vmovapd %%zmm1, %%zmm12\n"
++			"vmovapd %%zmm1, %%zmm13\n"
++			"vmovapd %%zmm1, %%zmm14\n"
++			"vmovapd %%zmm1, %%zmm15\n"
++			"vmovapd %%zmm1, %%zmm16\n"
++			"vmovapd %%zmm1, %%zmm17\n"
++			"vmovapd %%zmm1, %%zmm18\n"
++			"vmovapd %%zmm1, %%zmm21\n"
++			"vmovapd %%zmm1, %%zmm22\n"
++			"vmovapd %%zmm1, %%zmm23\n"
++			"vmovapd %%zmm1, %%zmm24\n"
++			"vmovapd %%zmm1, %%zmm25\n"
++			"vmovapd %%zmm1, %%zmm26\n"
++			"vmovapd %%zmm1, %%zmm27\n"
++			"vmovapd %%zmm1, %%zmm28\n"
++			"jmp .label24\n"
++			".align 32\n"
++			/* Inner math loop */
++			".label24:\n"
++			"vmovupd     -128(%[AO]),%%zmm0\n"
++			"vmovupd     -128(%[A1]),%%zmm10\n"
++			"vmovupd     -128(%[A2]),%%zmm20\n"
++
++			"vbroadcastsd       -96(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm1\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm11\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm21\n"
++
++			"vbroadcastsd       -88(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm2\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm12\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm22\n"
++
++			"vbroadcastsd       -80(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm3\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm13\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm23\n"
++
++			"vbroadcastsd       -72(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm4\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm14\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm24\n"
++
++			"vbroadcastsd       -64(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm5\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm15\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm25\n"
++
++			"vbroadcastsd       -56(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm6\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm16\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm26\n"
++
++			"vbroadcastsd       -48(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm7\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm17\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm27\n"
++
++			"vbroadcastsd       -40(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm8\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm18\n"
++			"vfmadd231pd    %%zmm9, %%zmm20, %%zmm28\n"
++			"add $64, %[AO]\n"
++			"add $64, %[A1]\n"
++			"add $64, %[A2]\n"
++			"add $64, %[BO]\n"
++			"prefetch 512(%[AO])\n"
++			"prefetch 512(%[A1])\n"
++			"prefetch 512(%[A2])\n"
++			"prefetch 512(%[BO])\n"
++			"subl $1, %[kloop]\n"
++			"jg .label24\n"
++			/* multiply the result by alpha */
++			"vbroadcastsd (%[alpha]), %%zmm9\n"
++			/* And store additively in C */
++			"vfmadd213pd (%[C0]), %%zmm9, %%zmm1\n"
++			"vfmadd213pd (%[C1]), %%zmm9, %%zmm2\n"
++			"vfmadd213pd (%[C2]), %%zmm9, %%zmm3\n"
++			"vfmadd213pd (%[C3]), %%zmm9, %%zmm4\n"
++			"vfmadd213pd (%[C4]), %%zmm9, %%zmm5\n"
++			"vfmadd213pd (%[C5]), %%zmm9, %%zmm6\n"
++			"vfmadd213pd (%[C6]), %%zmm9, %%zmm7\n"
++			"vfmadd213pd (%[C7]), %%zmm9, %%zmm8\n"
++			"vmovupd %%zmm1, (%[C0])\n"
++			"vmovupd %%zmm2, (%[C1])\n"
++			"vmovupd %%zmm3, (%[C2])\n"
++			"vmovupd %%zmm4, (%[C3])\n"
++			"vmovupd %%zmm5, (%[C4])\n"
++			"vmovupd %%zmm6, (%[C5])\n"
++			"vmovupd %%zmm7, (%[C6])\n"
++			"vmovupd %%zmm8, (%[C7])\n"
++
++			"vfmadd213pd 64(%[C0]), %%zmm9, %%zmm11\n"
++			"vfmadd213pd 64(%[C1]), %%zmm9, %%zmm12\n"
++			"vfmadd213pd 64(%[C2]), %%zmm9, %%zmm13\n"
++			"vfmadd213pd 64(%[C3]), %%zmm9, %%zmm14\n"
++			"vfmadd213pd 64(%[C4]), %%zmm9, %%zmm15\n"
++			"vfmadd213pd 64(%[C5]), %%zmm9, %%zmm16\n"
++			"vfmadd213pd 64(%[C6]), %%zmm9, %%zmm17\n"
++			"vfmadd213pd 64(%[C7]), %%zmm9, %%zmm18\n"
++			"vmovupd %%zmm11, 64(%[C0])\n"
++			"vmovupd %%zmm12, 64(%[C1])\n"
++			"vmovupd %%zmm13, 64(%[C2])\n"
++			"vmovupd %%zmm14, 64(%[C3])\n"
++			"vmovupd %%zmm15, 64(%[C4])\n"
++			"vmovupd %%zmm16, 64(%[C5])\n"
++			"vmovupd %%zmm17, 64(%[C6])\n"
++			"vmovupd %%zmm18, 64(%[C7])\n"
++
++			"vfmadd213pd 128(%[C0]), %%zmm9, %%zmm21\n"
++			"vfmadd213pd 128(%[C1]), %%zmm9, %%zmm22\n"
++			"vfmadd213pd 128(%[C2]), %%zmm9, %%zmm23\n"
++			"vfmadd213pd 128(%[C3]), %%zmm9, %%zmm24\n"
++			"vfmadd213pd 128(%[C4]), %%zmm9, %%zmm25\n"
++			"vfmadd213pd 128(%[C5]), %%zmm9, %%zmm26\n"
++			"vfmadd213pd 128(%[C6]), %%zmm9, %%zmm27\n"
++			"vfmadd213pd 128(%[C7]), %%zmm9, %%zmm28\n"
++			"vmovupd %%zmm21, 128(%[C0])\n"
++			"vmovupd %%zmm22, 128(%[C1])\n"
++			"vmovupd %%zmm23, 128(%[C2])\n"
++			"vmovupd %%zmm24, 128(%[C3])\n"
++			"vmovupd %%zmm25, 128(%[C4])\n"
++			"vmovupd %%zmm26, 128(%[C5])\n"
++			"vmovupd %%zmm27, 128(%[C6])\n"
++			"vmovupd %%zmm28, 128(%[C7])\n"
++
++			   :
++				[AO]	"+r" (AO),
++				[A1]	"+r" (A1),
++				[A2]	"+r" (A2),
++				[BO]	"+r" (BO),
++				[C0]	"+r" (CO1),
++				[kloop]	"+r" (kloop)
++			   :
++				[alpha] 	"r" (&alpha),
++				[C1] 	"r" (CO1 + 1 * ldc),
++				[C2] 	"r" (CO1 + 2 * ldc),
++				[C3] 	"r" (CO1 + 3 * ldc),
++				[C4] 	"r" (CO1 + 4 * ldc),
++				[C5] 	"r" (CO1 + 5 * ldc),
++				[C6] 	"r" (CO1 + 6 * ldc),
++				[C7] 	"r" (CO1 + 7 * ldc)
++
++			     :  "memory", "zmm0",  "zmm1",  "zmm2",  "zmm3",  "zmm4",  "zmm5",  "zmm6",  "zmm7",  "zmm8", "zmm9",
++					  "zmm10", "zmm11", "zmm12", "zmm13", "zmm14", "zmm15", "zmm16", "zmm17", "zmm18",
++					  "zmm20", "zmm21", "zmm22", "zmm23", "zmm24", "zmm25", "zmm26", "zmm27", "zmm28"
++			);
++			CO1 += 24;
++			AO += 16 * K;
++			i-= 24;
++		}
++
++
++		while (i >= 16) {
++			double *BO;
++			double *A1;
++			int kloop = K;
++
++			BO = B + 12;
++			A1 = AO + 8 * K;
++			/*
++			 *  This is the inner loop for the hot hot path 
++			 *  Written in inline asm because compilers like GCC 8 and earlier
++			 *  struggle with register allocation and are not good at using
++		 	 *  the AVX512 built in broadcast ability (1to8)
++			 */
++			asm(
++			"vxorpd  %%zmm1, %%zmm1, %%zmm1\n"
++			"vmovapd %%zmm1, %%zmm2\n"
++			"vmovapd %%zmm1, %%zmm3\n"
++			"vmovapd %%zmm1, %%zmm4\n"
++			"vmovapd %%zmm1, %%zmm5\n"
++			"vmovapd %%zmm1, %%zmm6\n"
++			"vmovapd %%zmm1, %%zmm7\n"
++			"vmovapd %%zmm1, %%zmm8\n"
++			"vmovapd %%zmm1, %%zmm11\n"
++			"vmovapd %%zmm1, %%zmm12\n"
++			"vmovapd %%zmm1, %%zmm13\n"
++			"vmovapd %%zmm1, %%zmm14\n"
++			"vmovapd %%zmm1, %%zmm15\n"
++			"vmovapd %%zmm1, %%zmm16\n"
++			"vmovapd %%zmm1, %%zmm17\n"
++			"vmovapd %%zmm1, %%zmm18\n"
++			"jmp .label16\n"
++			".align 32\n"
++			/* Inner math loop */
++			".label16:\n"
++			"vmovupd     -128(%[AO]),%%zmm0\n"
++			"vmovupd     -128(%[A1]),%%zmm10\n"
++
++			"vbroadcastsd       -96(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm1\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm11\n"
++
++			"vbroadcastsd       -88(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm2\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm12\n"
++
++			"vbroadcastsd       -80(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm3\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm13\n"
++
++			"vbroadcastsd       -72(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm4\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm14\n"
++
++			"vbroadcastsd       -64(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm5\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm15\n"
++
++			"vbroadcastsd       -56(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm6\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm16\n"
++
++			"vbroadcastsd       -48(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm7\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm17\n"
++
++			"vbroadcastsd       -40(%[BO]),  %%zmm9\n"
++			"vfmadd231pd    %%zmm9, %%zmm0,  %%zmm8\n"
++			"vfmadd231pd    %%zmm9, %%zmm10, %%zmm18\n"
++			"add $64, %[AO]\n"
++			"add $64, %[A1]\n"
++			"add $64, %[BO]\n"
++			"prefetch 512(%[AO])\n"
++			"prefetch 512(%[A1])\n"
++			"prefetch 512(%[BO])\n"
++			"subl $1, %[kloop]\n"
++			"jg .label16\n"
++			/* multiply the result by alpha */
++			"vbroadcastsd (%[alpha]), %%zmm9\n"
++			/* And store additively in C */
++			"vfmadd213pd (%[C0]), %%zmm9, %%zmm1\n"
++			"vfmadd213pd (%[C1]), %%zmm9, %%zmm2\n"
++			"vfmadd213pd (%[C2]), %%zmm9, %%zmm3\n"
++			"vfmadd213pd (%[C3]), %%zmm9, %%zmm4\n"
++			"vfmadd213pd (%[C4]), %%zmm9, %%zmm5\n"
++			"vfmadd213pd (%[C5]), %%zmm9, %%zmm6\n"
++			"vfmadd213pd (%[C6]), %%zmm9, %%zmm7\n"
++			"vfmadd213pd (%[C7]), %%zmm9, %%zmm8\n"
++			"vmovupd %%zmm1, (%[C0])\n"
++			"vmovupd %%zmm2, (%[C1])\n"
++			"vmovupd %%zmm3, (%[C2])\n"
++			"vmovupd %%zmm4, (%[C3])\n"
++			"vmovupd %%zmm5, (%[C4])\n"
++			"vmovupd %%zmm6, (%[C5])\n"
++			"vmovupd %%zmm7, (%[C6])\n"
++			"vmovupd %%zmm8, (%[C7])\n"
++
++			"vfmadd213pd 64(%[C0]), %%zmm9, %%zmm11\n"
++			"vfmadd213pd 64(%[C1]), %%zmm9, %%zmm12\n"
++			"vfmadd213pd 64(%[C2]), %%zmm9, %%zmm13\n"
++			"vfmadd213pd 64(%[C3]), %%zmm9, %%zmm14\n"
++			"vfmadd213pd 64(%[C4]), %%zmm9, %%zmm15\n"
++			"vfmadd213pd 64(%[C5]), %%zmm9, %%zmm16\n"
++			"vfmadd213pd 64(%[C6]), %%zmm9, %%zmm17\n"
++			"vfmadd213pd 64(%[C7]), %%zmm9, %%zmm18\n"
++			"vmovupd %%zmm11, 64(%[C0])\n"
++			"vmovupd %%zmm12, 64(%[C1])\n"
++			"vmovupd %%zmm13, 64(%[C2])\n"
++			"vmovupd %%zmm14, 64(%[C3])\n"
++			"vmovupd %%zmm15, 64(%[C4])\n"
++			"vmovupd %%zmm16, 64(%[C5])\n"
++			"vmovupd %%zmm17, 64(%[C6])\n"
++			"vmovupd %%zmm18, 64(%[C7])\n"
++
++			   :
++				[AO]	"+r" (AO),
++				[A1]	"+r" (A1),
++				[BO]	"+r" (BO),
++				[C0]	"+r" (CO1),
++				[kloop]	"+r" (kloop)
++			   :
++				[alpha] 	"r" (&alpha),
++				[C1] 	"r" (CO1 + 1 * ldc),
++				[C2] 	"r" (CO1 + 2 * ldc),
++				[C3] 	"r" (CO1 + 3 * ldc),
++				[C4] 	"r" (CO1 + 4 * ldc),
++				[C5] 	"r" (CO1 + 5 * ldc),
++				[C6] 	"r" (CO1 + 6 * ldc),
++				[C7] 	"r" (CO1 + 7 * ldc)
++
++			     :  "memory", "zmm0",  "zmm1",  "zmm2",  "zmm3",  "zmm4",  "zmm5",  "zmm6",  "zmm7",  "zmm8", "zmm9",
++					  "zmm10", "zmm11", "zmm12", "zmm13", "zmm14", "zmm15", "zmm16", "zmm17", "zmm18"
++			);
++			CO1 += 16;
++			AO += 8 * K;
++			i-= 16;
++		}
++
++		while (i >= 8) {
++			double *BO;
++			int kloop = K;
++
++			BO = B + 12;
++			/*
++			 *  This is the inner loop for the hot hot path
++			 *  Written in inline asm because compilers like GCC 8 and earlier
++			 *  struggle with register allocation and are not good at using
++			 *  the AVX512 built in broadcast ability (1to8)
++			 */
++			asm(
++			"vxorpd  %%zmm1, %%zmm1, %%zmm1\n" 
++			"vmovapd %%zmm1, %%zmm2\n"
++			"vmovapd %%zmm1, %%zmm3\n"
++			"vmovapd %%zmm1, %%zmm4\n"
++			"vmovapd %%zmm1, %%zmm5\n"
++			"vmovapd %%zmm1, %%zmm6\n"
++			"vmovapd %%zmm1, %%zmm7\n"
++			"vmovapd %%zmm1, %%zmm8\n"
++			"vbroadcastsd (%[alpha]), %%zmm9\n"
++			"jmp .label1\n"
++			".align 32\n"
++			/* Inner math loop */
++			".label1:\n"
++			"vmovupd     -128(%[AO]),%%zmm0\n"
++			"vfmadd231pd  -96(%[BO])%{1to8%}, %%zmm0, %%zmm1\n"
++			"vfmadd231pd  -88(%[BO])%{1to8%}, %%zmm0, %%zmm2\n"
++			"vfmadd231pd  -80(%[BO])%{1to8%}, %%zmm0, %%zmm3\n"
++			"vfmadd231pd  -72(%[BO])%{1to8%}, %%zmm0, %%zmm4\n"
++			"vfmadd231pd  -64(%[BO])%{1to8%}, %%zmm0, %%zmm5\n"
++			"vfmadd231pd  -56(%[BO])%{1to8%}, %%zmm0, %%zmm6\n"
++			"vfmadd231pd  -48(%[BO])%{1to8%}, %%zmm0, %%zmm7\n"
++			"vfmadd231pd  -40(%[BO])%{1to8%}, %%zmm0, %%zmm8\n"
++			"add $64, %[AO]\n"
++			"add $64, %[BO]\n"
++			"subl $1, %[kloop]\n"
++			"jg .label1\n"
++			/* multiply the result by alpha and add to the memory */
++			"vfmadd213pd (%[C0]), %%zmm9, %%zmm1\n"
++			"vfmadd213pd (%[C1]), %%zmm9, %%zmm2\n"
++			"vfmadd213pd (%[C2]), %%zmm9, %%zmm3\n"
++			"vfmadd213pd (%[C3]), %%zmm9, %%zmm4\n"
++			"vfmadd213pd (%[C4]), %%zmm9, %%zmm5\n"
++			"vfmadd213pd (%[C5]), %%zmm9, %%zmm6\n"
++			"vfmadd213pd (%[C6]), %%zmm9, %%zmm7\n"
++			"vfmadd213pd (%[C7]), %%zmm9, %%zmm8\n"
++			"vmovupd %%zmm1, (%[C0])\n"
++			"vmovupd %%zmm2, (%[C1])\n"
++			"vmovupd %%zmm3, (%[C2])\n"
++			"vmovupd %%zmm4, (%[C3])\n"
++			"vmovupd %%zmm5, (%[C4])\n"
++			"vmovupd %%zmm6, (%[C5])\n"
++			"vmovupd %%zmm7, (%[C6])\n"
++			"vmovupd %%zmm8, (%[C7])\n"
++			   : 
++  			     [AO]	"+r" (AO),
++			     [BO]	"+r" (BO),
++			     [C0]	"+r" (CO1),
++		             [kloop]	"+r" (kloop)
++			   :
++			     [alpha] 	"r" (&alpha),
++			     [C1] 	"r" (CO1 + 1 * ldc),
++			     [C2] 	"r" (CO1 + 2 * ldc),
++			     [C3] 	"r" (CO1 + 3 * ldc),
++			     [C4] 	"r" (CO1 + 4 * ldc),
++			     [C5] 	"r" (CO1 + 5 * ldc),
++			     [C6] 	"r" (CO1 + 6 * ldc),
++			     [C7] 	"r" (CO1 + 7 * ldc)
++
++			     :  "memory", "zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5", "zmm6", "zmm7", "zmm8", "zmm9"
++			);
++			CO1 += 8;
++			i-= 8;
++		}
++
++
++
++		while (i >= 4) {
++			double *BO;
++			__m256d ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7, ymm8, ymm9, ymm10, ymm11;
++			int kloop = K;
++
++			BO = B + 12;
++			INIT4x8()
++
++			while (kloop > 0) {
++				KERNEL4x8_SUB()
++				kloop--;
++			}				
++			SAVE4x8(alpha)
++			i-= 4;
++		}
++
++
++		while (i >= 2) {
++			double *BO;
++			__m128d xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9, xmm10, xmm11;
++			int kloop = K;
++
++			BO = B + 12;
++			INIT2x8()
++				
++			while (kloop > 0) {
++				KERNEL2x8_SUB()
++				kloop--;
++			}
++			SAVE2x8(alpha)
++			i -= 2;
++		}
++
++		while (i >= 1) {
++			double *BO;
++			double dbl0, dbl1, dbl2, dbl3, dbl4, dbl5, dbl6, dbl7, dbl8, dbl9, dbl10, dbl11;
++			int kloop = K;
++
++			BO = B + 12;
++			INIT1x8()
++										
++			while (kloop > 0) {
++				KERNEL1x8_SUB()
++				kloop--;
++			}
++			SAVE1x8(alpha)
++			i -= 1;
++		}
++		B += K * 8;
++		N -= 8;
++	}
++
++	if (N == 0)
++		return 0;	
++	
++
++
++	// L8_0
++	while (N >= 4) {
++		double *CO1;
++		double *AO;
++		int i;
++		// L8_10
++		CO1 = C;
++		C += 4 * ldc;
++
++		AO = A + 16;
++
++		i = m;
++		while (i >= 8) {
++			double *BO;
++			// L8_11
++			__m256d ymm0, ymm1, ymm2, ymm3, ymm4, ymm5,  ymm10, ymm11,ymm12,ymm13,ymm14,ymm15,ymm16,ymm17;
++			BO = B + 12;
++			int kloop = K;
++	
++			INIT8x4()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL8x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE8x4(alpha)
++	
++			i -= 8;
++		}
++		while (i >= 4) {
++			// L8_11
++			double *BO;
++			__m256d ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7;
++			BO = B + 12;
++			int kloop = K;
++
++			INIT4x4()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL4x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE4x4(alpha)
++
++			i -= 4;
++		}
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++
++		while (i >= 2) {
++			double *BO;
++			__m128d xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7;
++			BO = B;
++			BO += 12;
++
++			INIT2x4()
++			int kloop = K;
++			
++			while (kloop > 0) {
++				KERNEL2x4_SUB()
++				kloop--;
++			}
++			SAVE2x4(alpha)
++			i -= 2;
++		}
++			// L13_40
++		while (i >= 1) {
++			double *BO;
++			double dbl0, dbl1, dbl2, dbl3, dbl4, dbl5, dbl6, dbl7, dbl8;
++			int kloop = K;
++			BO = B + 12;
++			INIT1x4()
++				
++			while (kloop > 0) {
++				KERNEL1x4_SUB()
++				kloop--;
++			}
++			SAVE1x4(alpha)
++			i -= 1;
++		}
++			
++		B += K * 4;
++		N -= 4;
++	}
++
++/**************************************************************************************************/
++
++		// L8_0
++	while (N >= 2) {
++		double *CO1;
++		double *AO;
++		int i;
++		// L8_10
++		CO1 = C;
++		C += 2 * ldc;
++
++		AO = A + 16;
++
++		i = m;
++		while (i >= 8) {
++			double *BO;
++			__m256d ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7;
++			// L8_11
++			BO = B + 12;
++			int kloop = K;
++
++			INIT8x2()
++
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL8x2_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE8x2(alpha)
++
++			i-=8;
++		}
++
++		while (i >= 4) {
++			double *BO;
++			__m128d xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7;
++			// L8_11
++			BO = B + 12;
++			int kloop = K;
++	
++			INIT4x2()
++
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL4x2_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE4x2(alpha)
++	
++			i-=4;
++		}
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++
++		while (i >= 2) {
++			double *BO;
++			__m128d xmm0, xmm2, xmm3, xmm4, xmm6;
++			int kloop = K;
++			BO = B + 12;
++
++			INIT2x2()
++				
++			while (kloop > 0) {
++				KERNEL2x2_SUB()
++				kloop--;
++			}
++			SAVE2x2(alpha)
++			i -= 2;
++		}
++			// L13_40
++		while (i >= 1) {
++			double *BO;
++			double dbl0, dbl1, dbl2, dbl4, dbl5;
++			int kloop = K;
++			BO = B + 12;
++
++			INIT1x2()
++					
++			while (kloop > 0) {
++				KERNEL1x2_SUB()
++				kloop--;
++			}
++			SAVE1x2(alpha)
++			i -= 1;
++		}
++			
++		B += K * 2;
++		N -= 2;
++	}
++
++		// L8_0
++	while (N >= 1) {
++		// L8_10
++		double *CO1;
++		double *AO;
++		int i;
++
++		CO1 = C;
++		C += ldc;
++
++		AO = A + 16;
++
++		i = m;
++		while (i >= 8) {
++			double *BO;
++			__m512d zmm0, zmm2, zmm4;
++			// L8_11
++			BO = B + 12;
++			int kloop = K;
++
++			INIT8x1()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL8x1_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE8x1(alpha)
++
++			i-= 8;
++		}
++		while (i >= 4) {
++			double *BO;
++			__m256d ymm0, ymm2, ymm4, ymm5, ymm6, ymm7;
++			// L8_11
++			BO = B + 12;
++			int kloop = K;
++
++			INIT4x1()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL4x1_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE4x1(alpha)
++
++			i-= 4;
++		}
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++
++		while (i >= 2) {
++			double *BO;
++			__m128d xmm0, xmm2, xmm4;
++			int kloop = K;
++			BO = B;
++			BO += 12;
++
++			INIT2x1()
++				
++			while (kloop > 0) {
++				KERNEL2x1_SUB()
++				kloop--;
++			}
++			SAVE2x1(alpha)
++			i -= 2;
++		}
++				// L13_40
++		while (i >= 1) {
++			double *BO;
++			double dbl0, dbl1, dbl4;
++			int kloop = K;
++
++			BO = B;
++			BO += 12;
++			INIT1x1()
++				
++
++			while (kloop > 0) {
++				KERNEL1x1_SUB()
++				kloop--;
++			}
++			SAVE1x1(alpha)
++			i -= 1;
++		}
++			
++		B += K * 1;
++		N -= 1;
++	}
++
++
++	return 0;
++}
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_ncopy_8_2_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/dgemm_ncopy_8_2_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_ncopy_8_2_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/dgemm_ncopy_8_2_skylakex.c	2018-10-07 17:22:14.963123264 +0000
+@@ -0,0 +1,437 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include <stdio.h>
++#include "common.h"
++
++int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __restrict b){
++  BLASLONG i, j;
++
++  FLOAT *aoffset;
++  FLOAT *aoffset1, *aoffset2, *aoffset3, *aoffset4;
++  FLOAT *aoffset5, *aoffset6, *aoffset7, *aoffset8;
++
++  FLOAT *boffset;
++  FLOAT ctemp01, ctemp02, ctemp03, ctemp04;
++  FLOAT ctemp05, ctemp06, ctemp07, ctemp08;
++  FLOAT ctemp09, ctemp10, ctemp11, ctemp12;
++  FLOAT ctemp13, ctemp14, ctemp15, ctemp16;
++  FLOAT ctemp17, ctemp18, ctemp19, ctemp20;
++  FLOAT ctemp21, ctemp22, ctemp23, ctemp24;
++  FLOAT ctemp25, ctemp26, ctemp27, ctemp28;
++  FLOAT ctemp29, ctemp30, ctemp31, ctemp32;
++  FLOAT ctemp33, ctemp34, ctemp35, ctemp36;
++  FLOAT ctemp37, ctemp38, ctemp39, ctemp40;
++  FLOAT ctemp41, ctemp42, ctemp43, ctemp44;
++  FLOAT ctemp45, ctemp46, ctemp47, ctemp48;
++  FLOAT ctemp49, ctemp50, ctemp51, ctemp52;
++  FLOAT ctemp53, ctemp54, ctemp55, ctemp56;
++  FLOAT ctemp57, ctemp58, ctemp59, ctemp60;
++  FLOAT ctemp61, ctemp62, ctemp63, ctemp64;
++
++  aoffset = a;
++  boffset = b;
++
++  printf("n is %i m is %i \n", n,m);
++  printf("Printing A\n");
++  for (i=0; i < n; i++) {
++	for (j = 0; j < m; j++) {
++		printf("%8.2f\t", a[i * lda + j]);
++	}
++	printf("\n");
++  }
++
++  j = (n >> 3);
++  if (j > 0){
++    do{
++      aoffset1  = aoffset;
++      aoffset2  = aoffset1 + lda;
++      aoffset3  = aoffset2 + lda;
++      aoffset4  = aoffset3 + lda;
++      aoffset5  = aoffset4 + lda;
++      aoffset6  = aoffset5 + lda;
++      aoffset7  = aoffset6 + lda;
++      aoffset8  = aoffset7 + lda;
++      aoffset += 8 * lda;
++
++      i = (m >> 3);
++      if (i > 0){
++	do{
++	  ctemp01 = *(aoffset1 +  0);
++	  ctemp02 = *(aoffset1 +  1);
++	  ctemp03 = *(aoffset1 +  2);
++	  ctemp04 = *(aoffset1 +  3);
++	  ctemp05 = *(aoffset1 +  4);
++	  ctemp06 = *(aoffset1 +  5);
++	  ctemp07 = *(aoffset1 +  6);
++	  ctemp08 = *(aoffset1 +  7);
++
++	  ctemp09 = *(aoffset2 +  0);
++	  ctemp10 = *(aoffset2 +  1);
++	  ctemp11 = *(aoffset2 +  2);
++	  ctemp12 = *(aoffset2 +  3);
++	  ctemp13 = *(aoffset2 +  4);
++	  ctemp14 = *(aoffset2 +  5);
++	  ctemp15 = *(aoffset2 +  6);
++	  ctemp16 = *(aoffset2 +  7);
++
++	  ctemp17 = *(aoffset3 +  0);
++	  ctemp18 = *(aoffset3 +  1);
++	  ctemp19 = *(aoffset3 +  2);
++	  ctemp20 = *(aoffset3 +  3);
++	  ctemp21 = *(aoffset3 +  4);
++	  ctemp22 = *(aoffset3 +  5);
++	  ctemp23 = *(aoffset3 +  6);
++	  ctemp24 = *(aoffset3 +  7);
++
++	  ctemp25 = *(aoffset4 +  0);
++	  ctemp26 = *(aoffset4 +  1);
++	  ctemp27 = *(aoffset4 +  2);
++	  ctemp28 = *(aoffset4 +  3);
++	  ctemp29 = *(aoffset4 +  4);
++	  ctemp30 = *(aoffset4 +  5);
++	  ctemp31 = *(aoffset4 +  6);
++	  ctemp32 = *(aoffset4 +  7);
++
++	  ctemp33 = *(aoffset5 +  0);
++	  ctemp34 = *(aoffset5 +  1);
++	  ctemp35 = *(aoffset5 +  2);
++	  ctemp36 = *(aoffset5 +  3);
++	  ctemp37 = *(aoffset5 +  4);
++	  ctemp38 = *(aoffset5 +  5);
++	  ctemp39 = *(aoffset5 +  6);
++	  ctemp40 = *(aoffset5 +  7);
++
++	  ctemp41 = *(aoffset6 +  0);
++	  ctemp42 = *(aoffset6 +  1);
++	  ctemp43 = *(aoffset6 +  2);
++	  ctemp44 = *(aoffset6 +  3);
++	  ctemp45 = *(aoffset6 +  4);
++	  ctemp46 = *(aoffset6 +  5);
++	  ctemp47 = *(aoffset6 +  6);
++	  ctemp48 = *(aoffset6 +  7);
++
++	  ctemp49 = *(aoffset7 +  0);
++	  ctemp50 = *(aoffset7 +  1);
++	  ctemp51 = *(aoffset7 +  2);
++	  ctemp52 = *(aoffset7 +  3);
++	  ctemp53 = *(aoffset7 +  4);
++	  ctemp54 = *(aoffset7 +  5);
++	  ctemp55 = *(aoffset7 +  6);
++	  ctemp56 = *(aoffset7 +  7);
++
++	  ctemp57 = *(aoffset8 +  0);
++	  ctemp58 = *(aoffset8 +  1);
++	  ctemp59 = *(aoffset8 +  2);
++	  ctemp60 = *(aoffset8 +  3);
++	  ctemp61 = *(aoffset8 +  4);
++	  ctemp62 = *(aoffset8 +  5);
++	  ctemp63 = *(aoffset8 +  6);
++	  ctemp64 = *(aoffset8 +  7);
++
++	  *(boffset +  0) = ctemp01;
++	  *(boffset +  1) = ctemp09;
++	  *(boffset +  2) = ctemp17;
++	  *(boffset +  3) = ctemp25;
++	  *(boffset +  4) = ctemp33;
++	  *(boffset +  5) = ctemp41;
++	  *(boffset +  6) = ctemp49;
++	  *(boffset +  7) = ctemp57;
++
++	  *(boffset +  8) = ctemp02;
++	  *(boffset +  9) = ctemp10;
++	  *(boffset + 10) = ctemp18;
++	  *(boffset + 11) = ctemp26;
++	  *(boffset + 12) = ctemp34;
++	  *(boffset + 13) = ctemp42;
++	  *(boffset + 14) = ctemp50;
++	  *(boffset + 15) = ctemp58;
++
++	  *(boffset + 16) = ctemp03;
++	  *(boffset + 17) = ctemp11;
++	  *(boffset + 18) = ctemp19;
++	  *(boffset + 19) = ctemp27;
++	  *(boffset + 20) = ctemp35;
++	  *(boffset + 21) = ctemp43;
++	  *(boffset + 22) = ctemp51;
++	  *(boffset + 23) = ctemp59;
++
++	  *(boffset + 24) = ctemp04;
++	  *(boffset + 25) = ctemp12;
++	  *(boffset + 26) = ctemp20;
++	  *(boffset + 27) = ctemp28;
++	  *(boffset + 28) = ctemp36;
++	  *(boffset + 29) = ctemp44;
++	  *(boffset + 30) = ctemp52;
++	  *(boffset + 31) = ctemp60;
++
++	  *(boffset + 32) = ctemp05;
++	  *(boffset + 33) = ctemp13;
++	  *(boffset + 34) = ctemp21;
++	  *(boffset + 35) = ctemp29;
++	  *(boffset + 36) = ctemp37;
++	  *(boffset + 37) = ctemp45;
++	  *(boffset + 38) = ctemp53;
++	  *(boffset + 39) = ctemp61;
++
++	  *(boffset + 40) = ctemp06;
++	  *(boffset + 41) = ctemp14;
++	  *(boffset + 42) = ctemp22;
++	  *(boffset + 43) = ctemp30;
++	  *(boffset + 44) = ctemp38;
++	  *(boffset + 45) = ctemp46;
++	  *(boffset + 46) = ctemp54;
++	  *(boffset + 47) = ctemp62;
++
++	  *(boffset + 48) = ctemp07;
++	  *(boffset + 49) = ctemp15;
++	  *(boffset + 50) = ctemp23;
++	  *(boffset + 51) = ctemp31;
++	  *(boffset + 52) = ctemp39;
++	  *(boffset + 53) = ctemp47;
++	  *(boffset + 54) = ctemp55;
++	  *(boffset + 55) = ctemp63;
++
++	  *(boffset + 56) = ctemp08;
++	  *(boffset + 57) = ctemp16;
++	  *(boffset + 58) = ctemp24;
++	  *(boffset + 59) = ctemp32;
++	  *(boffset + 60) = ctemp40;
++	  *(boffset + 61) = ctemp48;
++	  *(boffset + 62) = ctemp56;
++	  *(boffset + 63) = ctemp64;
++
++	  aoffset1 +=  8;
++	  aoffset2 +=  8;
++	  aoffset3 +=  8;
++	  aoffset4 +=  8;
++	  aoffset5 +=  8;
++	  aoffset6 +=  8;
++	  aoffset7 +=  8;
++	  aoffset8 +=  8;
++	  boffset  += 64;
++	  i --;
++	}while(i > 0);
++      }
++
++      i = (m & 7);
++      if (i > 0){
++	do{
++	  ctemp01 = *(aoffset1 +  0);
++	  ctemp09 = *(aoffset2 +  0);
++	  ctemp17 = *(aoffset3 +  0);
++	  ctemp25 = *(aoffset4 +  0);
++	  ctemp33 = *(aoffset5 +  0);
++	  ctemp41 = *(aoffset6 +  0);
++	  ctemp49 = *(aoffset7 +  0);
++	  ctemp57 = *(aoffset8 +  0);
++
++	  *(boffset +  0) = ctemp01;
++	  *(boffset +  1) = ctemp09;
++	  *(boffset +  2) = ctemp17;
++	  *(boffset +  3) = ctemp25;
++	  *(boffset +  4) = ctemp33;
++	  *(boffset +  5) = ctemp41;
++	  *(boffset +  6) = ctemp49;
++	  *(boffset +  7) = ctemp57;
++
++	  aoffset1 ++;
++	  aoffset2 ++;
++	  aoffset3 ++;
++	  aoffset4 ++;
++	  aoffset5 ++;
++	  aoffset6 ++;
++	  aoffset7 ++;
++	  aoffset8 ++;
++
++	  boffset += 8;
++	  i --;
++	}while(i > 0);
++      }
++      j--;
++    }while(j > 0);
++  } /* end of if(j > 0) */
++
++  if (n & 4){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset3  = aoffset2 + lda;
++    aoffset4  = aoffset3 + lda;
++    aoffset += 4 * lda;
++
++    i = (m >> 2);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset1 +  2);
++	ctemp04 = *(aoffset1 +  3);
++
++	ctemp05 = *(aoffset2 +  0);
++	ctemp06 = *(aoffset2 +  1);
++	ctemp07 = *(aoffset2 +  2);
++	ctemp08 = *(aoffset2 +  3);
++
++	ctemp09 = *(aoffset3 +  0);
++	ctemp10 = *(aoffset3 +  1);
++	ctemp11 = *(aoffset3 +  2);
++	ctemp12 = *(aoffset3 +  3);
++
++	ctemp13 = *(aoffset4 +  0);
++	ctemp14 = *(aoffset4 +  1);
++	ctemp15 = *(aoffset4 +  2);
++	ctemp16 = *(aoffset4 +  3);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp05;
++	*(boffset +  2) = ctemp09;
++	*(boffset +  3) = ctemp13;
++
++	*(boffset +  4) = ctemp02;
++	*(boffset +  5) = ctemp06;
++	*(boffset +  6) = ctemp10;
++	*(boffset +  7) = ctemp14;
++
++	*(boffset +  8) = ctemp03;
++	*(boffset +  9) = ctemp07;
++	*(boffset + 10) = ctemp11;
++	*(boffset + 11) = ctemp15;
++
++	*(boffset + 12) = ctemp04;
++	*(boffset + 13) = ctemp08;
++	*(boffset + 14) = ctemp12;
++	*(boffset + 15) = ctemp16;
++
++	aoffset1 +=  4;
++	aoffset2 +=  4;
++	aoffset3 +=  4;
++	aoffset4 +=  4;
++	boffset  +=  16;
++	i --;
++      }while(i > 0);
++    }
++
++    i = (m & 3);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset2 +  0);
++	ctemp03 = *(aoffset3 +  0);
++	ctemp04 = *(aoffset4 +  0);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++	*(boffset +  2) = ctemp03;
++	*(boffset +  3) = ctemp04;
++
++	aoffset1 ++;
++	aoffset2 ++;
++	aoffset3 ++;
++	aoffset4 ++;
++
++	boffset += 4;
++	i --;
++      }while(i > 0);
++    }
++  } /* end of if(j > 0) */
++
++  if (n & 2){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset += 2 * lda;
++
++    i = (m >> 1);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset2 +  0);
++	ctemp04 = *(aoffset2 +  1);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp03;
++	*(boffset +  2) = ctemp02;
++	*(boffset +  3) = ctemp04;
++
++	aoffset1 +=  2;
++	aoffset2 +=  2;
++	boffset  +=  4;
++	i --;
++      }while(i > 0);
++    }
++
++    if (m & 1){
++      ctemp01 = *(aoffset1 +  0);
++      ctemp02 = *(aoffset2 +  0);
++
++      *(boffset +  0) = ctemp01;
++      *(boffset +  1) = ctemp02;
++
++      aoffset1 ++;
++      aoffset2 ++;
++      boffset += 2;
++    }
++  } /* end of if(j > 0) */
++
++  if (n & 1){
++    aoffset1  = aoffset;
++
++    i = m;
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++
++	*(boffset +  0) = ctemp01;
++
++	aoffset1 ++;
++	boffset  ++;
++	i --;
++      }while(i > 0);
++    }
++
++  } /* end of if(j > 0) */
++  printf("Printing B\n");
++  for (i=0; i < n; i++) {
++	for (j = 0; j < m; j++) {
++		printf("%8.2f\t", b[i * lda + j]);
++	}
++	printf("\n");
++  }
++
++  return 0;
++}
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_ncopy_8_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/dgemm_ncopy_8_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_ncopy_8_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/dgemm_ncopy_8_skylakex.c	2018-10-07 17:22:14.963123264 +0000
+@@ -0,0 +1,421 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include <stdio.h>
++#include "common.h"
++#include <immintrin.h>
++
++int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __restrict b){
++  BLASLONG i, j;
++
++  FLOAT *aoffset;
++  FLOAT *aoffset1, *aoffset2, *aoffset3, *aoffset4;
++  FLOAT *aoffset5, *aoffset6, *aoffset7, *aoffset8;
++
++  FLOAT *boffset;
++  FLOAT ctemp01, ctemp02, ctemp03, ctemp04;
++  FLOAT ctemp05, ctemp06, ctemp07, ctemp08;
++  FLOAT ctemp09, ctemp10, ctemp11, ctemp12;
++  FLOAT ctemp13, ctemp14, ctemp15, ctemp16;
++  FLOAT ctemp17, ctemp18, ctemp19, ctemp20;
++  FLOAT ctemp21, ctemp22, ctemp23, ctemp24;
++  FLOAT ctemp25, ctemp26, ctemp27, ctemp28;
++  FLOAT ctemp29, ctemp30, ctemp31, ctemp32;
++  FLOAT ctemp33, ctemp34, ctemp35, ctemp36;
++  FLOAT ctemp37, ctemp38, ctemp39, ctemp40;
++  FLOAT ctemp41, ctemp42, ctemp43, ctemp44;
++  FLOAT ctemp45, ctemp46, ctemp47, ctemp48;
++  FLOAT ctemp49, ctemp50, ctemp51, ctemp52;
++  FLOAT ctemp53, ctemp54, ctemp55, ctemp56;
++  FLOAT ctemp57, ctemp58, ctemp59, ctemp60;
++  FLOAT ctemp61, ctemp62, ctemp63, ctemp64;
++
++
++  aoffset = a;
++  boffset = b;
++
++  j = (n >> 3);
++  if (j > 0){
++    do{
++      aoffset1  = aoffset;
++      aoffset2  = aoffset1 + lda;
++      aoffset3  = aoffset2 + lda;
++      aoffset4  = aoffset3 + lda;
++      aoffset5  = aoffset4 + lda;
++      aoffset6  = aoffset5 + lda;
++      aoffset7  = aoffset6 + lda;
++      aoffset8  = aoffset7 + lda;
++      aoffset += 8 * lda;
++
++      i = (m >> 3);
++      if (i > 0){
++	do{
++	__m128d xmm0, xmm1;
++      xmm0 = _mm_load_pd1(aoffset2 + 0);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset1 + 0);
++      _mm_storeu_pd(boffset + 0, xmm0);
++
++	  ctemp07 = *(aoffset1 +  6);
++	  ctemp08 = *(aoffset1 +  7);
++
++      xmm1 = _mm_load_pd1(aoffset4 + 0);
++      xmm1 = _mm_loadl_pd(xmm1, aoffset3 + 0);
++      _mm_storeu_pd(boffset + 2, xmm1);
++
++      xmm0 = _mm_load_pd1(aoffset6 + 0);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset5 + 0);
++      _mm_storeu_pd(boffset + 4, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset8 + 0);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset7 + 0);
++      _mm_storeu_pd(boffset + 6, xmm0);
++
++	  ctemp15 = *(aoffset2 +  6);
++	  ctemp16 = *(aoffset2 +  7);
++
++      xmm0 = _mm_load_pd1(aoffset2 + 1);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset1 + 1);
++      _mm_storeu_pd(boffset + 8, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset4 + 1);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset3 + 1);
++      _mm_storeu_pd(boffset + 10, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset6 + 1);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset5 + 1);
++      _mm_storeu_pd(boffset + 12, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset8 + 1);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset7 + 1);
++      _mm_storeu_pd(boffset + 14, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset2 + 2);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset1 + 2);
++      _mm_storeu_pd(boffset + 16, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset4 + 2);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset3 + 2);
++      _mm_storeu_pd(boffset + 18, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset6 + 2);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset5 + 2);
++      _mm_storeu_pd(boffset + 20, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset8 + 2);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset7 + 2);
++      _mm_storeu_pd(boffset + 22, xmm0);
++
++	  ctemp23 = *(aoffset3 +  6);
++	  ctemp24 = *(aoffset3 +  7);
++
++      xmm0 = _mm_load_pd1(aoffset2 + 3);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset1 + 3);
++      _mm_storeu_pd(boffset + 24, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset4 + 3);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset3 + 3);
++      _mm_storeu_pd(boffset + 26, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset6 + 3);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset5 + 3);
++      _mm_storeu_pd(boffset + 28, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset8 + 3);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset7 + 3);
++      _mm_storeu_pd(boffset + 30, xmm0);
++
++	  ctemp31 = *(aoffset4 +  6);
++	  ctemp32 = *(aoffset4 +  7);
++
++
++      xmm0 = _mm_load_pd1(aoffset2 + 4);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset1 + 4);
++      _mm_storeu_pd(boffset + 32, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset4 + 4);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset3 + 4);
++      _mm_storeu_pd(boffset + 34, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset6 + 4);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset5 + 4);
++      _mm_storeu_pd(boffset + 36, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset8 + 4);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset7 + 4);
++      _mm_storeu_pd(boffset + 38, xmm0);
++
++	  ctemp39 = *(aoffset5 +  6);
++	  ctemp40 = *(aoffset5 +  7);
++
++      xmm0 = _mm_load_pd1(aoffset2 + 5);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset1 + 5);
++      _mm_storeu_pd(boffset + 40, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset4 + 5);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset3 + 5);
++      _mm_storeu_pd(boffset + 42, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset6 + 5);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset5 + 5);
++      _mm_storeu_pd(boffset + 44, xmm0);
++
++      xmm0 = _mm_load_pd1(aoffset8 + 5);
++      xmm0 = _mm_loadl_pd(xmm0, aoffset7 + 5);
++      _mm_storeu_pd(boffset + 46, xmm0);
++
++
++	  ctemp47 = *(aoffset6 +  6);
++	  ctemp48 = *(aoffset6 +  7);
++
++	  ctemp55 = *(aoffset7 +  6);
++	  ctemp56 = *(aoffset7 +  7);
++
++	  ctemp63 = *(aoffset8 +  6);
++	  ctemp64 = *(aoffset8 +  7);
++
++
++	  *(boffset + 48) = ctemp07;
++	  *(boffset + 49) = ctemp15;
++	  *(boffset + 50) = ctemp23;
++	  *(boffset + 51) = ctemp31;
++	  *(boffset + 52) = ctemp39;
++	  *(boffset + 53) = ctemp47;
++	  *(boffset + 54) = ctemp55;
++	  *(boffset + 55) = ctemp63;
++
++	  *(boffset + 56) = ctemp08;
++	  *(boffset + 57) = ctemp16;
++	  *(boffset + 58) = ctemp24;
++	  *(boffset + 59) = ctemp32;
++	  *(boffset + 60) = ctemp40;
++	  *(boffset + 61) = ctemp48;
++	  *(boffset + 62) = ctemp56;
++	  *(boffset + 63) = ctemp64;
++
++	  aoffset1 +=  8;
++	  aoffset2 +=  8;
++	  aoffset3 +=  8;
++	  aoffset4 +=  8;
++	  aoffset5 +=  8;
++	  aoffset6 +=  8;
++	  aoffset7 +=  8;
++	  aoffset8 +=  8;
++	  boffset  += 64;
++	  i --;
++	}while(i > 0);
++      }
++
++      i = (m & 7);
++      if (i > 0){
++	do{
++	  ctemp01 = *(aoffset1 +  0);
++	  ctemp09 = *(aoffset2 +  0);
++	  ctemp17 = *(aoffset3 +  0);
++	  ctemp25 = *(aoffset4 +  0);
++	  ctemp33 = *(aoffset5 +  0);
++	  ctemp41 = *(aoffset6 +  0);
++	  ctemp49 = *(aoffset7 +  0);
++	  ctemp57 = *(aoffset8 +  0);
++
++	  *(boffset +  0) = ctemp01;
++	  *(boffset +  1) = ctemp09;
++	  *(boffset +  2) = ctemp17;
++	  *(boffset +  3) = ctemp25;
++	  *(boffset +  4) = ctemp33;
++	  *(boffset +  5) = ctemp41;
++	  *(boffset +  6) = ctemp49;
++	  *(boffset +  7) = ctemp57;
++
++	  aoffset1 ++;
++	  aoffset2 ++;
++	  aoffset3 ++;
++	  aoffset4 ++;
++	  aoffset5 ++;
++	  aoffset6 ++;
++	  aoffset7 ++;
++	  aoffset8 ++;
++
++	  boffset += 8;
++	  i --;
++	}while(i > 0);
++      }
++      j--;
++    }while(j > 0);
++  } /* end of if(j > 0) */
++
++  if (n & 4){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset3  = aoffset2 + lda;
++    aoffset4  = aoffset3 + lda;
++    aoffset += 4 * lda;
++
++    i = (m >> 2);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset1 +  2);
++	ctemp04 = *(aoffset1 +  3);
++
++	ctemp05 = *(aoffset2 +  0);
++	ctemp06 = *(aoffset2 +  1);
++	ctemp07 = *(aoffset2 +  2);
++	ctemp08 = *(aoffset2 +  3);
++
++	ctemp09 = *(aoffset3 +  0);
++	ctemp10 = *(aoffset3 +  1);
++	ctemp11 = *(aoffset3 +  2);
++	ctemp12 = *(aoffset3 +  3);
++
++	ctemp13 = *(aoffset4 +  0);
++	ctemp14 = *(aoffset4 +  1);
++	ctemp15 = *(aoffset4 +  2);
++	ctemp16 = *(aoffset4 +  3);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp05;
++	*(boffset +  2) = ctemp09;
++	*(boffset +  3) = ctemp13;
++
++	*(boffset +  4) = ctemp02;
++	*(boffset +  5) = ctemp06;
++	*(boffset +  6) = ctemp10;
++	*(boffset +  7) = ctemp14;
++
++	*(boffset +  8) = ctemp03;
++	*(boffset +  9) = ctemp07;
++	*(boffset + 10) = ctemp11;
++	*(boffset + 11) = ctemp15;
++
++	*(boffset + 12) = ctemp04;
++	*(boffset + 13) = ctemp08;
++	*(boffset + 14) = ctemp12;
++	*(boffset + 15) = ctemp16;
++
++	aoffset1 +=  4;
++	aoffset2 +=  4;
++	aoffset3 +=  4;
++	aoffset4 +=  4;
++	boffset  +=  16;
++	i --;
++      }while(i > 0);
++    }
++
++    i = (m & 3);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset2 +  0);
++	ctemp03 = *(aoffset3 +  0);
++	ctemp04 = *(aoffset4 +  0);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++	*(boffset +  2) = ctemp03;
++	*(boffset +  3) = ctemp04;
++
++	aoffset1 ++;
++	aoffset2 ++;
++	aoffset3 ++;
++	aoffset4 ++;
++
++	boffset += 4;
++	i --;
++      }while(i > 0);
++    }
++  } /* end of if(j > 0) */
++
++  if (n & 2){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset += 2 * lda;
++
++    i = (m >> 1);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset2 +  0);
++	ctemp04 = *(aoffset2 +  1);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp03;
++	*(boffset +  2) = ctemp02;
++	*(boffset +  3) = ctemp04;
++
++	aoffset1 +=  2;
++	aoffset2 +=  2;
++	boffset  +=  4;
++	i --;
++      }while(i > 0);
++    }
++
++    if (m & 1){
++      ctemp01 = *(aoffset1 +  0);
++      ctemp02 = *(aoffset2 +  0);
++
++      *(boffset +  0) = ctemp01;
++      *(boffset +  1) = ctemp02;
++
++      aoffset1 ++;
++      aoffset2 ++;
++      boffset += 2;
++    }
++  } /* end of if(j > 0) */
++
++  if (n & 1){
++    aoffset1  = aoffset;
++
++    i = m;
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++
++	*(boffset +  0) = ctemp01;
++
++	aoffset1 ++;
++	boffset  ++;
++	i --;
++      }while(i > 0);
++    }
++
++  } /* end of if(j > 0) */
++
++  return 0;
++}
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_tcopy_8_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/dgemm_tcopy_8_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/dgemm_tcopy_8_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/dgemm_tcopy_8_skylakex.c	2018-10-07 17:22:14.963123264 +0000
+@@ -0,0 +1,417 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include <stdio.h>
++#include "common.h"
++#include <immintrin.h>
++
++int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __restrict b){
++
++  BLASLONG i, j;
++
++  FLOAT *aoffset;
++  FLOAT *aoffset1, *aoffset2, *aoffset3, *aoffset4;
++  FLOAT *aoffset5, *aoffset6, *aoffset7, *aoffset8;
++
++  FLOAT *boffset,  *boffset1, *boffset2, *boffset3, *boffset4;
++
++  FLOAT ctemp01, ctemp02, ctemp03, ctemp04;
++  FLOAT ctemp05, ctemp06, ctemp07, ctemp08;
++
++  aoffset   = a;
++  boffset   = b;
++
++#if 0
++  fprintf(stderr, "M = %d N = %d\n", m, n);
++#endif
++
++  boffset2  = b + m  * (n & ~7);
++  boffset3  = b + m  * (n & ~3);
++  boffset4  = b + m  * (n & ~1);
++
++  j = (m >> 3);
++  if (j > 0){
++    do{
++      aoffset1  = aoffset;
++      aoffset2  = aoffset1 + lda;
++      aoffset3  = aoffset2 + lda;
++      aoffset4  = aoffset3 + lda;
++      aoffset5  = aoffset4 + lda;
++      aoffset6  = aoffset5 + lda;
++      aoffset7  = aoffset6 + lda;
++      aoffset8  = aoffset7 + lda;
++      aoffset += 8 * lda;
++
++      boffset1  = boffset;
++      boffset  += 64;
++
++      i = (n >> 3);
++      if (i > 0){
++	do{
++	  __m512d row1, row2, row3, row4, row5, row6, row7, row8;
++	  row1 = _mm512_loadu_pd(aoffset1);
++	  aoffset1 += 8;
++	  row2 = _mm512_loadu_pd(aoffset2);
++	  aoffset2 += 8;
++	  row3 = _mm512_loadu_pd(aoffset3);
++	  aoffset3 += 8;
++	  row4 = _mm512_loadu_pd(aoffset4);
++	  aoffset4 += 8;
++	  row5 = _mm512_loadu_pd(aoffset5);
++	  aoffset5 += 8;
++	  row6 = _mm512_loadu_pd(aoffset6);
++	  aoffset6 += 8;
++	  row7 = _mm512_loadu_pd(aoffset7);
++	  aoffset7 += 8;
++	  row8 = _mm512_loadu_pd(aoffset8);
++	  aoffset8 += 8;
++
++	  _mm512_storeu_pd(boffset1 +  0, row1);
++	  _mm512_storeu_pd(boffset1 +  8, row2);
++	  _mm512_storeu_pd(boffset1 + 16, row3);
++	  _mm512_storeu_pd(boffset1 + 24, row4);
++	  _mm512_storeu_pd(boffset1 + 32, row5);
++	  _mm512_storeu_pd(boffset1 + 40, row6);
++	  _mm512_storeu_pd(boffset1 + 48, row7);
++	  _mm512_storeu_pd(boffset1 + 56, row8);
++	  boffset1 += m * 8;
++	  i --;
++	}while(i > 0);
++      }
++
++      if (n & 4){
++	__m256d row1, row2, row3, row4, row5, row6, row7, row8;
++	row1 = _mm256_loadu_pd(aoffset1);
++	aoffset1 += 4;
++	row2 = _mm256_loadu_pd(aoffset2);
++	aoffset2 += 4;
++	row3 = _mm256_loadu_pd(aoffset3);
++	aoffset3 += 4;
++	row4 = _mm256_loadu_pd(aoffset4);
++	aoffset4 += 4;
++	row5 = _mm256_loadu_pd(aoffset5);
++	aoffset5 += 4;
++	row6 = _mm256_loadu_pd(aoffset6);
++	aoffset6 += 4;
++	row7 = _mm256_loadu_pd(aoffset7);
++	aoffset7 += 4;
++	row8 = _mm256_loadu_pd(aoffset8);
++	aoffset8 += 4;
++
++	_mm256_storeu_pd(boffset2 +   0, row1);
++	_mm256_storeu_pd(boffset2 +   4, row2);
++	_mm256_storeu_pd(boffset2 +   8, row3);
++	_mm256_storeu_pd(boffset2 +  12, row4);
++	_mm256_storeu_pd(boffset2 +  16, row5);
++	_mm256_storeu_pd(boffset2 +  20, row6);
++	_mm256_storeu_pd(boffset2 +  24, row7);
++	_mm256_storeu_pd(boffset2 +  28, row8);
++	boffset2 += 32;
++      }
++
++      if (n & 2){
++	__m128d row1, row2, row3, row4, row5, row6, row7, row8;
++	row1 = _mm_loadu_pd(aoffset1);
++	aoffset1 += 2;
++
++	row2 = _mm_loadu_pd(aoffset2);
++	aoffset2 += 2;
++
++	row3 = _mm_loadu_pd(aoffset3);
++	aoffset3 += 2;
++
++	row4 = _mm_loadu_pd(aoffset4);
++	aoffset4 += 2;
++
++	row5 = _mm_loadu_pd(aoffset5);
++	aoffset5 += 2;
++
++	row6 = _mm_loadu_pd(aoffset6);
++	aoffset6 += 2;
++
++	row7 = _mm_loadu_pd(aoffset7);
++	aoffset7 += 2;
++
++	row8 = _mm_loadu_pd(aoffset8);
++	aoffset8 += 2;
++
++	_mm_storeu_pd(boffset3 +   0, row1);
++	_mm_storeu_pd(boffset3 +   2, row2);
++	_mm_storeu_pd(boffset3 +   4, row3);
++	_mm_storeu_pd(boffset3 +   6, row4);
++	_mm_storeu_pd(boffset3 +   8, row5);
++	_mm_storeu_pd(boffset3 +  10, row6);
++	_mm_storeu_pd(boffset3 +  12, row7);
++	_mm_storeu_pd(boffset3 +  14, row8);
++	boffset3 += 16;
++      }
++
++      if (n & 1){
++	ctemp01 = *(aoffset1 + 0);
++	aoffset1 ++;
++	ctemp02 = *(aoffset2 + 0);
++	aoffset2 ++;
++	ctemp03 = *(aoffset3 + 0);
++	aoffset3 ++;
++	ctemp04 = *(aoffset4 + 0);
++	aoffset4 ++;
++	ctemp05 = *(aoffset5 + 0);
++	aoffset5 ++;
++	ctemp06 = *(aoffset6 + 0);
++	aoffset6 ++;
++	ctemp07 = *(aoffset7 + 0);
++	aoffset7 ++;
++	ctemp08 = *(aoffset8 + 0);
++	aoffset8 ++;
++
++	*(boffset4 +  0) = ctemp01;
++	*(boffset4 +  1) = ctemp02;
++	*(boffset4 +  2) = ctemp03;
++	*(boffset4 +  3) = ctemp04;
++	*(boffset4 +  4) = ctemp05;
++	*(boffset4 +  5) = ctemp06;
++	*(boffset4 +  6) = ctemp07;
++	*(boffset4 +  7) = ctemp08;
++	boffset4 += 8;
++      }
++
++      j--;
++    }while(j > 0);
++  }
++
++  if (m & 4){
++
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset3  = aoffset2 + lda;
++    aoffset4  = aoffset3 + lda;
++    aoffset += 4 * lda;
++
++    boffset1  = boffset;
++    boffset  += 32;
++
++    i = (n >> 3);
++    if (i > 0){
++
++      do{
++	  __m512d row1, row2, row3, row4;
++	  row1 = _mm512_loadu_pd(aoffset1);
++	  aoffset1 += 8;
++	  row2 = _mm512_loadu_pd(aoffset2);
++	  aoffset2 += 8;
++	  row3 = _mm512_loadu_pd(aoffset3);
++	  aoffset3 += 8;
++	  row4 = _mm512_loadu_pd(aoffset4);
++	  aoffset4 += 8;
++
++	  _mm512_storeu_pd(boffset1 +  0, row1);
++	  _mm512_storeu_pd(boffset1 +  8, row2);
++	  _mm512_storeu_pd(boffset1 + 16, row3);
++	  _mm512_storeu_pd(boffset1 + 24, row4);
++
++	  boffset1 += 8 * m;
++	  i --;
++      }while(i > 0);
++    }
++
++    if (n & 4) {
++	__m256d row1, row2, row3, row4;
++	row1 = _mm256_loadu_pd(aoffset1);
++	aoffset1 += 4;
++	row2 = _mm256_loadu_pd(aoffset2);
++	aoffset2 += 4;
++	row3 = _mm256_loadu_pd(aoffset3);
++	aoffset3 += 4;
++	row4 = _mm256_loadu_pd(aoffset4);
++	aoffset4 += 4;
++	_mm256_storeu_pd(boffset2 +   0, row1);
++	_mm256_storeu_pd(boffset2 +   4, row2);
++	_mm256_storeu_pd(boffset2 +   8, row3);
++	_mm256_storeu_pd(boffset2 +  12, row4);
++        boffset2 += 16;
++    }
++
++    if (n & 2){
++	__m128d row1, row2, row3, row4;
++	row1 = _mm_loadu_pd(aoffset1);
++	aoffset1 += 2;
++
++	row2 = _mm_loadu_pd(aoffset2);
++	aoffset2 += 2;
++
++	row3 = _mm_loadu_pd(aoffset3);
++	aoffset3 += 2;
++
++	row4 = _mm_loadu_pd(aoffset4);
++	aoffset4 += 2;
++
++
++	_mm_storeu_pd(boffset3 +   0, row1);
++	_mm_storeu_pd(boffset3 +   2, row2);
++	_mm_storeu_pd(boffset3 +   4, row3);
++	_mm_storeu_pd(boffset3 +   6, row4);
++        boffset3 += 8;
++    }
++
++    if (n & 1){
++      ctemp01 = *(aoffset1 + 0);
++      aoffset1 ++;
++      ctemp02 = *(aoffset2 + 0);
++      aoffset2 ++;
++      ctemp03 = *(aoffset3 + 0);
++      aoffset3 ++;
++      ctemp04 = *(aoffset4 + 0);
++      aoffset4 ++;
++
++      *(boffset4 +  0) = ctemp01;
++      *(boffset4 +  1) = ctemp02;
++      *(boffset4 +  2) = ctemp03;
++      *(boffset4 +  3) = ctemp04;
++      boffset4 += 4;
++    }
++  }
++
++  if (m & 2){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset += 2 * lda;
++
++    boffset1  = boffset;
++    boffset  += 16;
++
++    i = (n >> 3);
++    if (i > 0){
++      do{
++	  __m512d row1, row2;
++	  row1 = _mm512_loadu_pd(aoffset1);
++	  aoffset1 += 8;
++	  row2 = _mm512_loadu_pd(aoffset2);
++	  aoffset2 += 8;
++
++	  _mm512_storeu_pd(boffset1 +  0, row1);
++	  _mm512_storeu_pd(boffset1 +  8, row2);
++	  boffset1 += 8 * m;
++	  i --;
++      }while(i > 0);
++    }
++
++    if (n & 4){
++	__m256d row1, row2;
++	row1 = _mm256_loadu_pd(aoffset1);
++	aoffset1 += 4;
++	row2 = _mm256_loadu_pd(aoffset2);
++	aoffset2 += 4;
++	_mm256_storeu_pd(boffset2 +   0, row1);
++	_mm256_storeu_pd(boffset2 +   4, row2);
++        boffset2 += 8;
++    }
++
++    if (n & 2){
++	__m128d row1, row2;
++	row1 = _mm_loadu_pd(aoffset1);
++	aoffset1 += 2;
++
++	row2 = _mm_loadu_pd(aoffset2);
++	aoffset2 += 2;
++
++
++	_mm_storeu_pd(boffset3 +   0, row1);
++	_mm_storeu_pd(boffset3 +   2, row2);
++       boffset3 += 4;
++    }
++
++    if (n & 1){
++      ctemp01 = *(aoffset1 + 0);
++      aoffset1 ++;
++      ctemp02 = *(aoffset2 + 0);
++      aoffset2 ++;
++
++      *(boffset4 +  0) = ctemp01;
++      *(boffset4 +  1) = ctemp02;
++      boffset4 += 2;
++    }
++  }
++
++  if (m & 1){
++    aoffset1  = aoffset;
++    // aoffset += lda;
++
++    boffset1  = boffset;
++    // boffset  += 8;
++
++    i = (n >> 3);
++    if (i > 0){
++      do{
++	__m512d row1;
++	  row1 = _mm512_loadu_pd(aoffset1);
++	  aoffset1 += 8;
++
++	  _mm512_storeu_pd(boffset1 +  0, row1);
++  	  boffset1 += 8 * m;
++	  i --;
++       }while(i > 0);
++     }
++
++     if (n & 4){
++	__m256d row1;
++	row1 = _mm256_loadu_pd(aoffset1);
++	aoffset1 += 4;
++	_mm256_storeu_pd(boffset2 +   0, row1);
++       // boffset2 += 4;
++     }
++
++     if (n & 2){
++	__m128d row1;
++	row1 = _mm_loadu_pd(aoffset1);
++	aoffset1 += 2;
++
++	_mm_storeu_pd(boffset3 +   0, row1);
++
++       // boffset3 += 2;
++     }
++
++     if (n & 1){
++       ctemp01 = *(aoffset1 + 0);
++       aoffset1 ++;
++      *(boffset4 +  0) = ctemp01;
++      boffset4 ++;
++    }
++  }
++
++  return 0;
++}
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/KERNEL.SKYLAKEX OpenBLAS-0.3.3/kernel/x86_64/KERNEL.SKYLAKEX
+--- OpenBLAS-0.3.3.org/kernel/x86_64/KERNEL.SKYLAKEX	2018-08-30 22:07:48.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/KERNEL.SKYLAKEX	2018-10-07 17:22:02.617123435 +0000
+@@ -1,19 +1,18 @@
+ include $(KERNELDIR)/KERNEL.HASWELL
+ 
+-SGEMMKERNEL    =  sgemm_kernel_16x4_skylakex.S
++SGEMMKERNEL    =  sgemm_kernel_16x4_skylakex.c
+ 
++SGEMMINCOPY    =  ../generic/gemm_ncopy_16.c
++SGEMMITCOPY    =  sgemm_tcopy_16_skylakex.c
++SGEMMONCOPY    =  sgemm_ncopy_4_skylakex.c
++SGEMMOTCOPY    =  ../generic/gemm_tcopy_4.c
+ 
+-#DTRMMKERNEL    =  ../generic/trmmkernel_16x2.c
+-#DGEMMKERNEL    =  dgemm_kernel_16x2_skylakex.S
+-#DGEMMINCOPY    =  ../generic/gemm_ncopy_16.c
+-#DGEMMITCOPY    =  ../generic/gemm_tcopy_16.c
+-#DGEMMONCOPY    =  ../generic/gemm_ncopy_2.c
+-#DGEMMOTCOPY    =  ../generic/gemm_tcopy_2.c
+-#DGEMMINCOPYOBJ =  dgemm_incopy$(TSUFFIX).$(SUFFIX)
+-#DGEMMITCOPYOBJ =  dgemm_itcopy$(TSUFFIX).$(SUFFIX)
+-#DGEMMONCOPYOBJ =  dgemm_oncopy$(TSUFFIX).$(SUFFIX)
+-#DGEMMOTCOPYOBJ =  dgemm_otcopy$(TSUFFIX).$(SUFFIX)
++DGEMMKERNEL    =  dgemm_kernel_4x8_skylakex.c
+ 
++DGEMMINCOPY    =  dgemm_ncopy_8_skylakex.c
++DGEMMITCOPY    =  dgemm_tcopy_8_skylakex.c
++DGEMMONCOPY    =  dgemm_ncopy_8_skylakex.c
++DGEMMOTCOPY    =  dgemm_tcopy_8_skylakex.c
+ 
+-SGEMM_BETA = ../generic/gemm_beta.c
+-DGEMM_BETA = ../generic/gemm_beta.c
++SGEMM_BETA = sgemm_beta_skylakex.c
++DGEMM_BETA = dgemm_beta_skylakex.c
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_beta_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/sgemm_beta_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_beta_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/sgemm_beta_skylakex.c	2018-10-07 17:22:14.963123264 +0000
+@@ -0,0 +1,150 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include "common.h"
++
++#include <immintrin.h>
++
++int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
++	  FLOAT *dummy2, BLASLONG dummy3, FLOAT *dummy4, BLASLONG dummy5,
++	  FLOAT *c, BLASLONG ldc){
++
++  BLASLONG i, j;
++  FLOAT *c_offset1, *c_offset;
++  FLOAT ctemp1, ctemp2, ctemp3, ctemp4;
++  FLOAT ctemp5, ctemp6, ctemp7, ctemp8;
++
++  /* fast path.. just zero the whole matrix */
++  if (m == ldc && (unsigned long)beta == (unsigned long)ZERO) {
++	memset(c, 0, m * n * sizeof(FLOAT));
++	return 0;
++  }
++
++
++  c_offset = c;
++
++  if (beta == ZERO){
++    __m512 z_zero;
++
++    z_zero = _mm512_setzero_ps();
++    j = n;
++    do {
++      c_offset1 = c_offset;
++      c_offset += ldc;
++
++      i = m;
++
++      while (i > 32) {
++	  _mm512_storeu_ps(c_offset1, z_zero);
++	  _mm512_storeu_ps(c_offset1 + 8, z_zero);
++	  _mm512_storeu_ps(c_offset1 + 16, z_zero);
++	  _mm512_storeu_ps(c_offset1 + 24 , z_zero);
++	  c_offset1 += 32;
++	  i -= 32;
++      }
++      while (i > 8) {
++	  _mm512_storeu_ps(c_offset1, z_zero);
++	  c_offset1 += 8;
++	  i -= 8;
++      }
++
++      while (i > 0) {
++	  *c_offset1 = ZERO;
++	  c_offset1 ++;
++	  i --;
++      }
++      j --;
++    } while (j > 0);
++
++  } else {
++
++    j = n;
++    do {
++      c_offset1 = c_offset;
++      c_offset += ldc;
++
++      i = (m >> 3);
++      if (i > 0){
++	do {
++	  ctemp1 = *(c_offset1 + 0);
++	  ctemp2 = *(c_offset1 + 1);
++	  ctemp3 = *(c_offset1 + 2);
++	  ctemp4 = *(c_offset1 + 3);
++	  ctemp5 = *(c_offset1 + 4);
++	  ctemp6 = *(c_offset1 + 5);
++	  ctemp7 = *(c_offset1 + 6);
++	  ctemp8 = *(c_offset1 + 7);
++
++	  ctemp1 *= beta;
++	  ctemp2 *= beta;
++	  ctemp3 *= beta;
++	  ctemp4 *= beta;
++	  ctemp5 *= beta;
++	  ctemp6 *= beta;
++	  ctemp7 *= beta;
++	  ctemp8 *= beta;
++
++	  *(c_offset1 + 0) = ctemp1;
++	  *(c_offset1 + 1) = ctemp2;
++	  *(c_offset1 + 2) = ctemp3;
++	  *(c_offset1 + 3) = ctemp4;
++	  *(c_offset1 + 4) = ctemp5;
++	  *(c_offset1 + 5) = ctemp6;
++	  *(c_offset1 + 6) = ctemp7;
++	  *(c_offset1 + 7) = ctemp8;
++	  c_offset1 += 8;
++	  i --;
++	} while (i > 0);
++      }
++
++      i = (m & 7);
++      if (i > 0){
++	do {
++	  ctemp1 = *c_offset1;
++	  ctemp1 *= beta;
++	  *c_offset1 = ctemp1;
++	  c_offset1 ++;
++	  i --;
++	} while (i > 0);
++      }
++      j --;
++    } while (j > 0);
++
++  }
++  return 0;
++};
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_kernel_16x4_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/sgemm_kernel_16x4_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_kernel_16x4_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/sgemm_kernel_16x4_skylakex.c	2018-10-07 17:22:14.963123264 +0000
+@@ -0,0 +1,1756 @@
++/*********************************************************************************
++Copyright (c) 2013, The OpenBLAS Project
++All rights reserved.
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are
++met:
++1. Redistributions of source code must retain the above copyright
++notice, this list of conditions and the following disclaimer.
++2. Redistributions in binary form must reproduce the above copyright
++notice, this list of conditions and the following disclaimer in
++the documentation and/or other materials provided with the
++distribution.
++3. Neither the name of the OpenBLAS project nor the names of
++its contributors may be used to endorse or promote products
++derived from this software without specific prior written permission.
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ARE DISCLAIMED. IN NO EVENT SHALL THE OPENBLAS PROJECT OR CONTRIBUTORS BE
++LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
++USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++**********************************************************************************/
++
++
++/* comment below left for history, data does not represent the implementation in this file */
++
++/*********************************************************************
++* 2014/07/28 Saar
++*        BLASTEST               : OK
++*        CTEST                  : OK
++*        TEST                   : OK
++*
++* 2013/10/28 Saar
++* Parameter:
++*	SGEMM_DEFAULT_UNROLL_N	4
++*	SGEMM_DEFAULT_UNROLL_M	16
++*	SGEMM_DEFAULT_P		768
++*	SGEMM_DEFAULT_Q		384
++*	A_PR1			512
++*	B_PR1			512
++*	
++* 
++* 2014/07/28 Saar
++* Performance at 9216x9216x9216:
++*       1 thread:      102 GFLOPS       (SANDYBRIDGE:  59)      (MKL:   83)
++*       2 threads:     195 GFLOPS       (SANDYBRIDGE: 116)      (MKL:  155)
++*       3 threads:     281 GFLOPS       (SANDYBRIDGE: 165)      (MKL:  230)
++*       4 threads:     366 GFLOPS       (SANDYBRIDGE: 223)      (MKL:  267)
++*
++*********************************************************************/
++
++#include "common.h"
++#include <immintrin.h>
++
++
++
++/*******************************************************************************************
++* 8 lines of N
++*******************************************************************************************/
++ 
++
++
++#define INIT32x8()	\
++	row0 = _mm512_setzero_ps();					\
++	row1 = _mm512_setzero_ps();					\
++	row2 = _mm512_setzero_ps();					\
++	row3 = _mm512_setzero_ps();					\
++	row4 = _mm512_setzero_ps();					\
++	row5 = _mm512_setzero_ps();					\
++	row6 = _mm512_setzero_ps();					\
++	row0b = _mm512_setzero_ps();					\
++	row1b = _mm512_setzero_ps();					\
++	row2b = _mm512_setzero_ps();					\
++	row3b = _mm512_setzero_ps();					\
++	row4b = _mm512_setzero_ps();					\
++	row5b = _mm512_setzero_ps();					\
++	row6b = _mm512_setzero_ps();					\
++	row7b = _mm512_setzero_ps();					\
++
++#define KERNEL32x8_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);					\
++	zmm0b  = _mm512_loadu_ps(AOb);					\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 0));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	row0  += zmm0 * zmm2;						\
++	row1  += zmm0 * zmm3;						\
++	row0b += zmm0b * zmm2;						\
++	row1b += zmm0b * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 2));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 3));		\
++	row2  += zmm0 * zmm2;						\
++	row3  += zmm0 * zmm3;						\
++	row2b += zmm0b * zmm2;						\
++	row3b += zmm0b * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 4));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 5));		\
++	row4  += zmm0 * zmm2;						\
++	row5  += zmm0 * zmm3;						\
++	row4b += zmm0b * zmm2;						\
++	row5b += zmm0b * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 6));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 7));		\
++	row6  += zmm0 * zmm2;						\
++	row7  += zmm0 * zmm3;						\
++	row6b += zmm0b * zmm2;						\
++	row7b += zmm0b * zmm3;						\
++	BO  += 8;							\
++	AO  += 16;							\
++	AOb += 16;
++
++
++#define SAVE32x8(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	row0  *= zmm0;							\
++	row1  *= zmm0;							\
++	row2  *= zmm0;							\
++	row3  *= zmm0;							\
++	row4  *= zmm0;							\
++	row5  *= zmm0;							\
++	row6  *= zmm0;							\
++	row7  *= zmm0;							\
++	row0b  *= zmm0;							\
++	row1b  *= zmm0;							\
++	row2b  *= zmm0;							\
++	row3b  *= zmm0;							\
++	row4b  *= zmm0;							\
++	row5b  *= zmm0;							\
++	row6b  *= zmm0;							\
++	row7b  *= zmm0;							\
++	row0  += _mm512_loadu_ps(CO1 + 0 * ldc);			\
++	row1  += _mm512_loadu_ps(CO1 + 1 * ldc);			\
++	row2  += _mm512_loadu_ps(CO1 + 2 * ldc);			\
++	row3  += _mm512_loadu_ps(CO1 + 3 * ldc);			\
++	row4  += _mm512_loadu_ps(CO1 + 4 * ldc);			\
++	row5  += _mm512_loadu_ps(CO1 + 5 * ldc);			\
++	row6  += _mm512_loadu_ps(CO1 + 6 * ldc);			\
++	row7  += _mm512_loadu_ps(CO1 + 7 * ldc);			\
++	_mm512_storeu_ps(CO1 + 0 * ldc, row0);				\
++	_mm512_storeu_ps(CO1 + 1 * ldc, row1);				\
++	_mm512_storeu_ps(CO1 + 2 * ldc, row2);				\
++	_mm512_storeu_ps(CO1 + 3 * ldc, row3);				\
++	_mm512_storeu_ps(CO1 + 4 * ldc, row4);				\
++	_mm512_storeu_ps(CO1 + 5 * ldc, row5);				\
++	_mm512_storeu_ps(CO1 + 6 * ldc, row6);				\
++	_mm512_storeu_ps(CO1 + 7 * ldc, row7);				\
++	row0b  += _mm512_loadu_ps(CO1 + 0 * ldc + 16);			\
++	row1b  += _mm512_loadu_ps(CO1 + 1 * ldc + 16);			\
++	row2b  += _mm512_loadu_ps(CO1 + 2 * ldc + 16);			\
++	row3b  += _mm512_loadu_ps(CO1 + 3 * ldc + 16);			\
++	row4b  += _mm512_loadu_ps(CO1 + 4 * ldc + 16);			\
++	row5b  += _mm512_loadu_ps(CO1 + 5 * ldc + 16);			\
++	row6b  += _mm512_loadu_ps(CO1 + 6 * ldc + 16);			\
++	row7b  += _mm512_loadu_ps(CO1 + 7 * ldc + 16);			\
++	_mm512_storeu_ps(CO1 + 0 * ldc + 16, row0b);			\
++	_mm512_storeu_ps(CO1 + 1 * ldc + 16, row1b);			\
++	_mm512_storeu_ps(CO1 + 2 * ldc + 16, row2b);			\
++	_mm512_storeu_ps(CO1 + 3 * ldc + 16, row3b);			\
++	_mm512_storeu_ps(CO1 + 4 * ldc + 16, row4b);			\
++	_mm512_storeu_ps(CO1 + 5 * ldc + 16, row5b);			\
++	_mm512_storeu_ps(CO1 + 6 * ldc + 16, row6b);			\
++	_mm512_storeu_ps(CO1 + 7 * ldc + 16, row7b);			\
++
++
++#define INIT16x8()	\
++	row0 = _mm512_setzero_ps();					\
++	row1 = _mm512_setzero_ps();					\
++	row2 = _mm512_setzero_ps();					\
++	row3 = _mm512_setzero_ps();					\
++	row4 = _mm512_setzero_ps();					\
++	row5 = _mm512_setzero_ps();					\
++	row6 = _mm512_setzero_ps();					\
++	row7 = _mm512_setzero_ps();					\
++
++#define KERNEL16x8_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);					\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 0));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	row0  += zmm0 * zmm2;						\
++	row1  += zmm0 * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 2));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 3));		\
++	row2  += zmm0 * zmm2;						\
++	row3  += zmm0 * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 4));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 5));		\
++	row4  += zmm0 * zmm2;						\
++	row5  += zmm0 * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 6));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 7));		\
++	row6  += zmm0 * zmm2;						\
++	row7  += zmm0 * zmm3;						\
++	BO += 8;							\
++	AO += 16;
++
++
++#define SAVE16x8(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	row0  *= zmm0;							\
++	row1  *= zmm0;							\
++	row2  *= zmm0;							\
++	row3  *= zmm0;							\
++	row4  *= zmm0;							\
++	row5  *= zmm0;							\
++	row6  *= zmm0;							\
++	row7  *= zmm0;							\
++	row0  += _mm512_loadu_ps(CO1 + 0 * ldc);			\
++	row1  += _mm512_loadu_ps(CO1 + 1 * ldc);			\
++	row2  += _mm512_loadu_ps(CO1 + 2 * ldc);			\
++	row3  += _mm512_loadu_ps(CO1 + 3 * ldc);			\
++	row4  += _mm512_loadu_ps(CO1 + 4 * ldc);			\
++	row5  += _mm512_loadu_ps(CO1 + 5 * ldc);			\
++	row6  += _mm512_loadu_ps(CO1 + 6 * ldc);			\
++	row7  += _mm512_loadu_ps(CO1 + 7 * ldc);			\
++	_mm512_storeu_ps(CO1 + 0 * ldc, row0);				\
++	_mm512_storeu_ps(CO1 + 1 * ldc, row1);				\
++	_mm512_storeu_ps(CO1 + 2 * ldc, row2);				\
++	_mm512_storeu_ps(CO1 + 3 * ldc, row3);				\
++	_mm512_storeu_ps(CO1 + 4 * ldc, row4);				\
++	_mm512_storeu_ps(CO1 + 5 * ldc, row5);				\
++	_mm512_storeu_ps(CO1 + 6 * ldc, row6);				\
++	_mm512_storeu_ps(CO1 + 7 * ldc, row7);			
++
++
++
++/*******************************************************************************************/
++
++#define INIT8x8()							\
++	row0 = _mm256_setzero_ps();					\
++	row1 = _mm256_setzero_ps();					\
++	row2 = _mm256_setzero_ps();					\
++	row3 = _mm256_setzero_ps();					\
++	row4 = _mm256_setzero_ps();					\
++	row5 = _mm256_setzero_ps();					\
++	row6 = _mm256_setzero_ps();					\
++	row7 = _mm256_setzero_ps();					\
++
++#define KERNEL8x8_SUB() 						\
++	ymm0   = _mm256_loadu_ps(AO);					\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 0));		\
++	ymm3   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	row0  += ymm0 * ymm2;						\
++	row1  += ymm0 * ymm3;						\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 2));		\
++	ymm3   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 3));		\
++	row2  += ymm0 * ymm2;						\
++	row3  += ymm0 * ymm3;						\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 4));		\
++	ymm3   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 5));		\
++	row4  += ymm0 * ymm2;						\
++	row5  += ymm0 * ymm3;						\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 6));		\
++	ymm3   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 7));		\
++	row6  += ymm0 * ymm2;						\
++	row7  += ymm0 * ymm3;						\
++	BO  += 8;							\
++	AO  += 8;
++
++
++#define SAVE8x8(ALPHA)							\
++	ymm0   = _mm256_set1_ps(ALPHA);					\
++	row0  *= ymm0;							\
++	row1  *= ymm0;							\
++	row2  *= ymm0;							\
++	row3  *= ymm0;							\
++	row4  *= ymm0;							\
++	row5  *= ymm0;							\
++	row6  *= ymm0;							\
++	row7  *= ymm0;							\
++	row0  += _mm256_loadu_ps(CO1 + 0 * ldc);			\
++	row1  += _mm256_loadu_ps(CO1 + 1 * ldc);			\
++	row2  += _mm256_loadu_ps(CO1 + 2 * ldc);			\
++	row3  += _mm256_loadu_ps(CO1 + 3 * ldc);			\
++	row4  += _mm256_loadu_ps(CO1 + 4 * ldc);			\
++	row5  += _mm256_loadu_ps(CO1 + 5 * ldc);			\
++	row6  += _mm256_loadu_ps(CO1 + 6 * ldc);			\
++	row7  += _mm256_loadu_ps(CO1 + 7 * ldc);			\
++	_mm256_storeu_ps(CO1 + 0 * ldc, row0);				\
++	_mm256_storeu_ps(CO1 + 1 * ldc, row1);				\
++	_mm256_storeu_ps(CO1 + 2 * ldc, row2);				\
++	_mm256_storeu_ps(CO1 + 3 * ldc, row3);				\
++	_mm256_storeu_ps(CO1 + 4 * ldc, row4);				\
++	_mm256_storeu_ps(CO1 + 5 * ldc, row5);				\
++	_mm256_storeu_ps(CO1 + 6 * ldc, row6);				\
++	_mm256_storeu_ps(CO1 + 7 * ldc, row7);				\
++
++
++
++/*******************************************************************************************/
++
++#define INIT4x8()							\
++	row0 = _mm_setzero_ps();					\
++	row1 = _mm_setzero_ps();					\
++	row2 = _mm_setzero_ps();					\
++	row3 = _mm_setzero_ps();					\
++	row4 = _mm_setzero_ps();					\
++	row5 = _mm_setzero_ps();					\
++	row6 = _mm_setzero_ps();					\
++	row7 = _mm_setzero_ps();					\
++
++
++#define KERNEL4x8_SUB() 						\
++	xmm0   = _mm_loadu_ps(AO);					\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO + 0));		\
++	xmm3   =  _mm_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	row0  += xmm0 * xmm2;						\
++	row1  += xmm0 * xmm3;						\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO + 2));		\
++	xmm3   =  _mm_broadcastss_ps(_mm_load_ss(BO + 3));		\
++	row2  += xmm0 * xmm2;						\
++	row3  += xmm0 * xmm3;						\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO + 4));		\
++	xmm3   =  _mm_broadcastss_ps(_mm_load_ss(BO + 5));		\
++	row4  += xmm0 * xmm2;						\
++	row5  += xmm0 * xmm3;						\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO + 6));		\
++	xmm3   =  _mm_broadcastss_ps(_mm_load_ss(BO + 7));		\
++	row6  += xmm0 * xmm2;						\
++	row7  += xmm0 * xmm3;						\
++	BO  += 8;							\
++	AO  += 4;
++
++
++#define SAVE4x8(ALPHA)							\
++	xmm0   = _mm_set1_ps(ALPHA);					\
++	row0  *= xmm0;							\
++	row1  *= xmm0;							\
++	row2  *= xmm0;							\
++	row3  *= xmm0;							\
++	row4  *= xmm0;							\
++	row5  *= xmm0;							\
++	row6  *= xmm0;							\
++	row7  *= xmm0;							\
++	row0  += _mm_loadu_ps(CO1 + 0 * ldc);				\
++	row1  += _mm_loadu_ps(CO1 + 1 * ldc);				\
++	row2  += _mm_loadu_ps(CO1 + 2 * ldc);				\
++	row3  += _mm_loadu_ps(CO1 + 3 * ldc);				\
++	row4  += _mm_loadu_ps(CO1 + 4 * ldc);				\
++	row5  += _mm_loadu_ps(CO1 + 5 * ldc);				\
++	row6  += _mm_loadu_ps(CO1 + 6 * ldc);				\
++	row7  += _mm_loadu_ps(CO1 + 7 * ldc);				\
++	_mm_storeu_ps(CO1 + 0 * ldc, row0);				\
++	_mm_storeu_ps(CO1 + 1 * ldc, row1);				\
++	_mm_storeu_ps(CO1 + 2 * ldc, row2);				\
++	_mm_storeu_ps(CO1 + 3 * ldc, row3);				\
++	_mm_storeu_ps(CO1 + 4 * ldc, row4);				\
++	_mm_storeu_ps(CO1 + 5 * ldc, row5);				\
++	_mm_storeu_ps(CO1 + 6 * ldc, row6);				\
++	_mm_storeu_ps(CO1 + 7 * ldc, row7);				\
++
++
++/*******************************************************************************************/
++
++#define INIT2x8() 	\
++	row0a = row0b = 0; 						\
++	row1a = row1b = 0; 						\
++	row2a = row2b = 0; 						\
++	row3a = row3b = 0; 						\
++	row4a = row4b = 0; 						\
++	row5a = row5b = 0; 						\
++	row6a = row6b = 0; 						\
++	row7a = row7b = 0; 						\
++
++#define KERNEL2x8_SUB()							\
++	xmm0  = *(AO);							\
++	xmm1  = *(AO + 1);						\
++	xmm2  = *(BO + 0);						\
++	xmm3  = *(BO + 1);						\
++	row0a += xmm0 * xmm2;						\
++	row0b += xmm1 * xmm2;						\
++	row1a += xmm0 * xmm3;						\
++	row1b += xmm1 * xmm3;						\
++	xmm2 = *(BO + 2);						\
++	xmm3 = *(BO + 3);						\
++	row2a += xmm0 * xmm2;						\
++	row2b += xmm1 * xmm2;						\
++	row3a += xmm0 * xmm3;						\
++	row3b += xmm1 * xmm3;						\
++	xmm2  = *(BO + 4);						\
++	xmm3  = *(BO + 5);						\
++	row4a += xmm0 * xmm2;						\
++	row4b += xmm1 * xmm2;						\
++	row5a += xmm0 * xmm3;						\
++	row5b += xmm1 * xmm3;						\
++	xmm2 = *(BO + 6);						\
++	xmm3 = *(BO + 7);						\
++	row6a += xmm0 * xmm2;						\
++	row6b += xmm1 * xmm2;						\
++	row7a += xmm0 * xmm3;						\
++	row7b += xmm1 * xmm3;						\
++	BO += 8;							\
++	AO += 2;
++
++
++#define SAVE2x8(ALPHA)							\
++	xmm0   = ALPHA;							\
++	row0a  *= xmm0;							\
++	row0b  *= xmm0;							\
++	row1a  *= xmm0;							\
++	row1b  *= xmm0;							\
++	row2a  *= xmm0;							\
++	row2b  *= xmm0;							\
++	row3a  *= xmm0;							\
++	row3b  *= xmm0;							\
++	row4a  *= xmm0;							\
++	row4b  *= xmm0;							\
++	row5a  *= xmm0;							\
++	row5b  *= xmm0;							\
++	row6a  *= xmm0;							\
++	row6b  *= xmm0;							\
++	row7a  *= xmm0;							\
++	row7b  *= xmm0;							\
++	*(CO1 + 0 * ldc + 0) += row0a;					\
++	*(CO1 + 0 * ldc + 1) += row0b;					\
++	*(CO1 + 1 * ldc + 0) += row1a;					\
++	*(CO1 + 1 * ldc + 1) += row1b;					\
++	*(CO1 + 2 * ldc + 0) += row2a;					\
++	*(CO1 + 2 * ldc + 1) += row2b;					\
++	*(CO1 + 3 * ldc + 0) += row3a;					\
++	*(CO1 + 3 * ldc + 1) += row3b;					\
++	*(CO1 + 4 * ldc + 0) += row4a;					\
++	*(CO1 + 4 * ldc + 1) += row4b;					\
++	*(CO1 + 5 * ldc + 0) += row5a;					\
++	*(CO1 + 5 * ldc + 1) += row5b;					\
++	*(CO1 + 6 * ldc + 0) += row6a;					\
++	*(CO1 + 6 * ldc + 1) += row6b;					\
++	*(CO1 + 7 * ldc + 0) += row7a;					\
++	*(CO1 + 7 * ldc + 1) += row7b;					\
++
++
++
++/*******************************************************************************************/
++
++#define INIT1x8() \
++	row0 = row1 = row2 = row3 = row4 = row5 = row6 = row7 = 0;
++
++#define KERNEL1x8_SUB()							\
++	xmm0   = *(AO );						\
++	xmm2   = *(BO + 0);						\
++	xmm3   = *(BO + 1);						\
++	row0  += xmm0 * xmm2;						\
++	row1  += xmm0 * xmm3;						\
++	xmm2   = *(BO + 2);						\
++	xmm3   = *(BO + 3);						\
++	row2  += xmm0 * xmm2;						\
++	row3  += xmm0 * xmm3;						\
++	xmm2   = *(BO + 4);						\
++	xmm3   = *(BO + 5);						\
++	row4  += xmm0 * xmm2;						\
++	row5  += xmm0 * xmm3;						\
++	xmm2   = *(BO + 6);						\
++	xmm3   = *(BO + 7);						\
++	row6  += xmm0 * xmm2;						\
++	row7  += xmm0 * xmm3;						\
++	BO += 8;							\
++	AO += 1;
++
++
++#define SAVE1x8(ALPHA)							\
++	xmm0   = ALPHA;							\
++	row0  *= xmm0;							\
++	row1  *= xmm0;							\
++	row2  *= xmm0;							\
++	row3  *= xmm0;							\
++	row4  *= xmm0;							\
++	row5  *= xmm0;							\
++	row6  *= xmm0;							\
++	row7  *= xmm0;							\
++	*(CO1 + 0 * ldc) += row0;					\
++	*(CO1 + 1 * ldc) += row1;					\
++	*(CO1 + 2 * ldc) += row2;					\
++	*(CO1 + 3 * ldc) += row3;					\
++	*(CO1 + 4 * ldc) += row4;					\
++	*(CO1 + 5 * ldc) += row5;					\
++	*(CO1 + 6 * ldc) += row6;					\
++	*(CO1 + 7 * ldc) += row7;					\
++
++
++
++/*******************************************************************************************
++* 4 lines of N
++*******************************************************************************************/
++
++#define INIT64x4()	\
++	zmm4 = _mm512_setzero_ps();					\
++	zmm6 = _mm512_setzero_ps();					\
++	zmm8 = _mm512_setzero_ps();					\
++	zmm10 = _mm512_setzero_ps();					\
++	zmm14 = _mm512_setzero_ps();					\
++	zmm16 = _mm512_setzero_ps();					\
++	zmm18 = _mm512_setzero_ps();					\
++	zmm20 = _mm512_setzero_ps();					\
++	zmm24 = _mm512_setzero_ps();					\
++	zmm26 = _mm512_setzero_ps();					\
++	zmm28 = _mm512_setzero_ps();					\
++	zmm30 = _mm512_setzero_ps();					\
++	zmm34 = _mm512_setzero_ps();					\
++	zmm36 = _mm512_setzero_ps();					\
++	zmm38 = _mm512_setzero_ps();					\
++	zmm40 = _mm512_setzero_ps();					\
++
++#define KERNEL64x4_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);					\
++	zmm1   = _mm512_loadu_ps(A1);					\
++	zmm5   = _mm512_loadu_ps(A2);					\
++	zmm7   = _mm512_loadu_ps(A3);					\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+1));		\
++	zmm4  += zmm0 * zmm2;						\
++	zmm6  += zmm0 * zmm3;						\
++	zmm14 += zmm1 * zmm2;						\
++	zmm16 += zmm1 * zmm3;						\
++	zmm24 += zmm5 * zmm2;						\
++	zmm26 += zmm5 * zmm3;						\
++	zmm34 += zmm7 * zmm2;						\
++	zmm36 += zmm7 * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO+2));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+3));		\
++	zmm8  += zmm0 * zmm2;						\
++	zmm10 += zmm0 * zmm3;						\
++	zmm18 += zmm1 * zmm2;						\
++	zmm20 += zmm1 * zmm3;						\
++	zmm28 += zmm5 * zmm2;						\
++	zmm30 += zmm5 * zmm3;						\
++	zmm38 += zmm7 * zmm2;						\
++	zmm40 += zmm7 * zmm3;						\
++	BO += 4;							\
++	AO += 16;							\
++	A1 += 16;							\
++	A2 += 16;							\
++	A3 += 16;							\
++
++
++#define SAVE64x4(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	zmm4  *= zmm0;							\
++	zmm6  *= zmm0;							\
++	zmm8  *= zmm0;							\
++	zmm10 *= zmm0;							\
++	zmm14 *= zmm0;							\
++	zmm16 *= zmm0;							\
++	zmm18 *= zmm0;							\
++	zmm20 *= zmm0;							\
++	zmm24 *= zmm0;							\
++	zmm26 *= zmm0;							\
++	zmm28 *= zmm0;							\
++	zmm30 *= zmm0;							\
++	zmm34 *= zmm0;							\
++	zmm36 *= zmm0;							\
++	zmm38 *= zmm0;							\
++	zmm40 *= zmm0;							\
++	zmm4  += _mm512_loadu_ps(CO1 + 0*ldc);				\
++	zmm6  += _mm512_loadu_ps(CO1 + 1*ldc);				\
++	zmm8  += _mm512_loadu_ps(CO1 + 2*ldc);				\
++	zmm10 += _mm512_loadu_ps(CO1 + 3*ldc);				\
++	_mm512_storeu_ps(CO1 + 0*ldc, zmm4);				\
++	_mm512_storeu_ps(CO1 + 1*ldc, zmm6);				\
++	_mm512_storeu_ps(CO1 + 2*ldc, zmm8);				\
++	_mm512_storeu_ps(CO1 + 3*ldc, zmm10);				\
++	zmm14  += _mm512_loadu_ps(CO1 + 0*ldc + 16);			\
++	zmm16  += _mm512_loadu_ps(CO1 + 1*ldc + 16);			\
++	zmm18  += _mm512_loadu_ps(CO1 + 2*ldc + 16);			\
++	zmm20 += _mm512_loadu_ps(CO1 + 3*ldc + 16);			\
++	_mm512_storeu_ps(CO1 + 0*ldc + 16, zmm14);			\
++	_mm512_storeu_ps(CO1 + 1*ldc + 16, zmm16);			\
++	_mm512_storeu_ps(CO1 + 2*ldc + 16, zmm18);			\
++	_mm512_storeu_ps(CO1 + 3*ldc + 16, zmm20);			\
++	zmm24  += _mm512_loadu_ps(CO1 + 0*ldc + 32);			\
++	zmm26  += _mm512_loadu_ps(CO1 + 1*ldc + 32);			\
++	zmm28  += _mm512_loadu_ps(CO1 + 2*ldc + 32);			\
++	zmm30  += _mm512_loadu_ps(CO1 + 3*ldc + 32);			\
++	_mm512_storeu_ps(CO1 + 0*ldc + 32, zmm24);			\
++	_mm512_storeu_ps(CO1 + 1*ldc + 32, zmm26);			\
++	_mm512_storeu_ps(CO1 + 2*ldc + 32, zmm28);			\
++	_mm512_storeu_ps(CO1 + 3*ldc + 32, zmm30);			\
++	zmm34  += _mm512_loadu_ps(CO1 + 0*ldc + 48);			\
++	zmm36  += _mm512_loadu_ps(CO1 + 1*ldc + 48);			\
++	zmm38  += _mm512_loadu_ps(CO1 + 2*ldc + 48);			\
++	zmm40  += _mm512_loadu_ps(CO1 + 3*ldc + 48);			\
++	_mm512_storeu_ps(CO1 + 0*ldc + 48, zmm34);			\
++	_mm512_storeu_ps(CO1 + 1*ldc + 48, zmm36);			\
++	_mm512_storeu_ps(CO1 + 2*ldc + 48, zmm38);			\
++	_mm512_storeu_ps(CO1 + 3*ldc + 48, zmm40);		
++
++
++#define INIT48x4()	\
++	zmm4 = _mm512_setzero_ps();					\
++	zmm6 = _mm512_setzero_ps();					\
++	zmm8 = _mm512_setzero_ps();					\
++	zmm10 = _mm512_setzero_ps();					\
++	zmm14 = _mm512_setzero_ps();					\
++	zmm16 = _mm512_setzero_ps();					\
++	zmm18 = _mm512_setzero_ps();					\
++	zmm20 = _mm512_setzero_ps();					\
++	zmm24 = _mm512_setzero_ps();					\
++	zmm26 = _mm512_setzero_ps();					\
++	zmm28 = _mm512_setzero_ps();					\
++	zmm30 = _mm512_setzero_ps();					\
++
++#define KERNEL48x4_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);					\
++	zmm1   = _mm512_loadu_ps(A1);					\
++	zmm5   = _mm512_loadu_ps(A2);					\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+1));		\
++	zmm4  += zmm0 * zmm2;						\
++	zmm6  += zmm0 * zmm3;						\
++	zmm14 += zmm1 * zmm2;						\
++	zmm16 += zmm1 * zmm3;						\
++	zmm24 += zmm5 * zmm2;						\
++	zmm26 += zmm5 * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO+2));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+3));		\
++	zmm8  += zmm0 * zmm2;						\
++	zmm10 += zmm0 * zmm3;						\
++	zmm18 += zmm1 * zmm2;						\
++	zmm20 += zmm1 * zmm3;						\
++	zmm28 += zmm5 * zmm2;						\
++	zmm30 += zmm5 * zmm3;						\
++	BO += 4;							\
++	AO += 16;							\
++	A1 += 16;							\
++	A2 += 16;
++
++
++#define SAVE48x4(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	zmm4  *= zmm0;							\
++	zmm6  *= zmm0;							\
++	zmm8  *= zmm0;							\
++	zmm10 *= zmm0;							\
++	zmm14 *= zmm0;							\
++	zmm16 *= zmm0;							\
++	zmm18 *= zmm0;							\
++	zmm20 *= zmm0;							\
++	zmm24 *= zmm0;							\
++	zmm26 *= zmm0;							\
++	zmm28 *= zmm0;							\
++	zmm30 *= zmm0;							\
++	zmm4  += _mm512_loadu_ps(CO1 + 0*ldc);				\
++	zmm6  += _mm512_loadu_ps(CO1 + 1*ldc);				\
++	zmm8  += _mm512_loadu_ps(CO1 + 2*ldc);				\
++	zmm10 += _mm512_loadu_ps(CO1 + 3*ldc);				\
++	_mm512_storeu_ps(CO1 + 0*ldc, zmm4);				\
++	_mm512_storeu_ps(CO1 + 1*ldc, zmm6);				\
++	_mm512_storeu_ps(CO1 + 2*ldc, zmm8);				\
++	_mm512_storeu_ps(CO1 + 3*ldc, zmm10);				\
++	zmm14  += _mm512_loadu_ps(CO1 + 0*ldc + 16);			\
++	zmm16  += _mm512_loadu_ps(CO1 + 1*ldc + 16);			\
++	zmm18  += _mm512_loadu_ps(CO1 + 2*ldc + 16);			\
++	zmm20 += _mm512_loadu_ps(CO1 + 3*ldc + 16);			\
++	_mm512_storeu_ps(CO1 + 0*ldc + 16, zmm14);			\
++	_mm512_storeu_ps(CO1 + 1*ldc + 16, zmm16);			\
++	_mm512_storeu_ps(CO1 + 2*ldc + 16, zmm18);			\
++	_mm512_storeu_ps(CO1 + 3*ldc + 16, zmm20);			\
++	zmm24  += _mm512_loadu_ps(CO1 + 0*ldc + 32);			\
++	zmm26  += _mm512_loadu_ps(CO1 + 1*ldc + 32);			\
++	zmm28  += _mm512_loadu_ps(CO1 + 2*ldc + 32);			\
++	zmm30  += _mm512_loadu_ps(CO1 + 3*ldc + 32);			\
++	_mm512_storeu_ps(CO1 + 0*ldc + 32, zmm24);			\
++	_mm512_storeu_ps(CO1 + 1*ldc + 32, zmm26);			\
++	_mm512_storeu_ps(CO1 + 2*ldc + 32, zmm28);			\
++	_mm512_storeu_ps(CO1 + 3*ldc + 32, zmm30);		
++
++
++#define INIT32x4()	\
++	zmm4 = _mm512_setzero_ps();					\
++	zmm6 = _mm512_setzero_ps();					\
++	zmm8 = _mm512_setzero_ps();					\
++	zmm10 = _mm512_setzero_ps();					\
++	zmm14 = _mm512_setzero_ps();					\
++	zmm16 = _mm512_setzero_ps();					\
++	zmm18 = _mm512_setzero_ps();					\
++	zmm20 = _mm512_setzero_ps();					\
++
++#define KERNEL32x4_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);					\
++	zmm1   = _mm512_loadu_ps(A1);					\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+1));		\
++	zmm4  += zmm0 * zmm2;						\
++	zmm6  += zmm0 * zmm3;						\
++	zmm14 += zmm1 * zmm2;						\
++	zmm16 += zmm1 * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO+2));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+3));		\
++	zmm8  += zmm0 * zmm2;						\
++	zmm10 += zmm0 * zmm3;						\
++	zmm18 += zmm1 * zmm2;						\
++	zmm20 += zmm1 * zmm3;						\
++	BO += 4;							\
++	AO += 16;							\
++	A1 += 16;
++
++
++#define SAVE32x4(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	zmm4  *= zmm0;							\
++	zmm6  *= zmm0;							\
++	zmm8  *= zmm0;							\
++	zmm10 *= zmm0;							\
++	zmm14 *= zmm0;							\
++	zmm16 *= zmm0;							\
++	zmm18 *= zmm0;							\
++	zmm20 *= zmm0;							\
++	zmm4  += _mm512_loadu_ps(CO1 + 0*ldc);				\
++	zmm6  += _mm512_loadu_ps(CO1 + 1*ldc);				\
++	zmm8  += _mm512_loadu_ps(CO1 + 2*ldc);				\
++	zmm10 += _mm512_loadu_ps(CO1 + 3*ldc);				\
++	_mm512_storeu_ps(CO1 + 0*ldc, zmm4);				\
++	_mm512_storeu_ps(CO1 + 1*ldc, zmm6);				\
++	_mm512_storeu_ps(CO1 + 2*ldc, zmm8);				\
++	_mm512_storeu_ps(CO1 + 3*ldc, zmm10);				\
++	zmm14  += _mm512_loadu_ps(CO1 + 0*ldc + 16);			\
++	zmm16  += _mm512_loadu_ps(CO1 + 1*ldc + 16);			\
++	zmm18  += _mm512_loadu_ps(CO1 + 2*ldc + 16);			\
++	zmm20 += _mm512_loadu_ps(CO1 + 3*ldc + 16);			\
++	_mm512_storeu_ps(CO1 + 0*ldc + 16, zmm14);			\
++	_mm512_storeu_ps(CO1 + 1*ldc + 16, zmm16);			\
++	_mm512_storeu_ps(CO1 + 2*ldc + 16, zmm18);			\
++	_mm512_storeu_ps(CO1 + 3*ldc + 16, zmm20);		
++
++
++
++#define INIT16x4()	\
++	zmm4 = _mm512_setzero_ps();					\
++	zmm6 = _mm512_setzero_ps();					\
++	zmm8 = _mm512_setzero_ps();					\
++	zmm10 = _mm512_setzero_ps();					\
++
++#define KERNEL16x4_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);					\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+1));		\
++	zmm4  += zmm0 * zmm2;						\
++	zmm6  += zmm0 * zmm3;						\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO+2));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO+3));		\
++	zmm8  += zmm0 * zmm2;						\
++	zmm10 += zmm0 * zmm3;						\
++	BO += 4;							\
++	AO += 16;
++
++
++#define SAVE16x4(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	zmm4  *= zmm0;							\
++	zmm6  *= zmm0;							\
++	zmm8  *= zmm0;							\
++	zmm10 *= zmm0;							\
++	zmm4  += _mm512_loadu_ps(CO1);					\
++	zmm6  += _mm512_loadu_ps(CO1 + ldc);				\
++	zmm8  += _mm512_loadu_ps(CO2);					\
++	zmm10 += _mm512_loadu_ps(CO2 + ldc);				\
++	_mm512_storeu_ps(CO1      , zmm4);				\
++	_mm512_storeu_ps(CO1 + ldc, zmm6);				\
++	_mm512_storeu_ps(CO2      , zmm8);				\
++	_mm512_storeu_ps(CO2 + ldc, zmm10);			
++
++
++
++/*******************************************************************************************/
++
++#define INIT8x4()							\
++	ymm4 = _mm256_setzero_ps();					\
++	ymm6 = _mm256_setzero_ps();					\
++	ymm8 = _mm256_setzero_ps();					\
++	ymm10 = _mm256_setzero_ps();					\
++
++#define KERNEL8x4_SUB() 						\
++	ymm0   = _mm256_loadu_ps(AO);					\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 0));		\
++	ymm3   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	ymm4  += ymm0 * ymm2;						\
++	ymm6  += ymm0 * ymm3;						\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 2));		\
++	ymm3   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 3));		\
++	ymm8  += ymm0 * ymm2;						\
++	ymm10 += ymm0 * ymm3;						\
++	BO  += 4;							\
++	AO  += 8;
++
++
++#define SAVE8x4(ALPHA)							\
++	ymm0   = _mm256_set1_ps(ALPHA);					\
++	ymm4  *= ymm0;							\
++	ymm6  *= ymm0;							\
++	ymm8  *= ymm0;							\
++	ymm10 *= ymm0;							\
++	ymm4  += _mm256_loadu_ps(CO1);					\
++	ymm6  += _mm256_loadu_ps(CO1 + ldc);				\
++	ymm8  += _mm256_loadu_ps(CO2);					\
++	ymm10 += _mm256_loadu_ps(CO2 + ldc);				\
++	_mm256_storeu_ps(CO1      , ymm4);				\
++	_mm256_storeu_ps(CO1 + ldc, ymm6);				\
++	_mm256_storeu_ps(CO2      , ymm8);				\
++	_mm256_storeu_ps(CO2 + ldc, ymm10);				\
++
++
++
++/*******************************************************************************************/
++
++#define INIT4x4()							\
++	xmm4 = _mm_setzero_ps();					\
++	xmm6 = _mm_setzero_ps();					\
++	xmm8 = _mm_setzero_ps();					\
++	xmm10 = _mm_setzero_ps();					\
++
++
++#define KERNEL4x4_SUB() 						\
++	xmm0   = _mm_loadu_ps(AO);					\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO + 0));		\
++	xmm3   =  _mm_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	xmm4  += xmm0 * xmm2;						\
++	xmm6  += xmm0 * xmm3;						\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO + 2));		\
++	xmm3   =  _mm_broadcastss_ps(_mm_load_ss(BO + 3));		\
++	xmm8  += xmm0 * xmm2;						\
++	xmm10 += xmm0 * xmm3;						\
++	BO  += 4;							\
++	AO  += 4;
++
++
++#define SAVE4x4(ALPHA)							\
++	xmm0   = _mm_set1_ps(ALPHA);					\
++	xmm4  *= xmm0;							\
++	xmm6  *= xmm0;							\
++	xmm8  *= xmm0;							\
++	xmm10 *= xmm0;							\
++	xmm4  += _mm_loadu_ps(CO1);					\
++	xmm6  += _mm_loadu_ps(CO1 + ldc);				\
++	xmm8  += _mm_loadu_ps(CO2);					\
++	xmm10 += _mm_loadu_ps(CO2 + ldc);				\
++	_mm_storeu_ps(CO1      , xmm4);					\
++	_mm_storeu_ps(CO1 + ldc, xmm6);					\
++	_mm_storeu_ps(CO2      , xmm8);					\
++	_mm_storeu_ps(CO2 + ldc, xmm10);				\
++
++
++/*******************************************************************************************/
++
++#define INIT2x4() 	\
++	xmm4 = 0; xmm5 = 0; xmm6 = 0; xmm7 = 0; 			\
++	xmm8 = 0; xmm9 = 0; xmm10 = 0; xmm11 = 0;
++
++#define KERNEL2x4_SUB()							\
++	xmm0  = *(AO);							\
++	xmm1  = *(AO + 1);						\
++	xmm2  = *(BO + 0);						\
++	xmm3  = *(BO + 1);						\
++	xmm4 += xmm0 * xmm2;						\
++	xmm5 += xmm1 * xmm2;						\
++	xmm6 += xmm0 * xmm3;						\
++	xmm7 += xmm1 * xmm3;						\
++	xmm2 = *(BO + 2);						\
++	xmm3 = *(BO + 3);						\
++	xmm8 += xmm0 * xmm2;						\
++	xmm9 += xmm1 * xmm2;						\
++	xmm10 += xmm0 * xmm3;						\
++	xmm11 += xmm1 * xmm3;						\
++	BO += 4;							\
++	AO += 2;
++
++
++#define SAVE2x4(ALPHA)							\
++	xmm0   = ALPHA;							\
++	xmm4  *= xmm0;							\
++	xmm5  *= xmm0;							\
++	xmm6  *= xmm0;							\
++	xmm7  *= xmm0;							\
++	xmm8  *= xmm0;							\
++	xmm9  *= xmm0;							\
++	xmm10 *= xmm0;							\
++	xmm11 *= xmm0;							\
++	*(CO1         ) += xmm4;					\
++	*(CO1 +1      ) += xmm5;					\
++	*(CO1 + ldc   ) += xmm6;					\
++	*(CO1 + ldc +1) += xmm7;					\
++	*(CO2         ) += xmm8;					\
++	*(CO2 +1      ) += xmm9;					\
++	*(CO2 + ldc   ) += xmm10;					\
++	*(CO2 + ldc +1) += xmm11;					\
++
++
++
++/*******************************************************************************************/
++
++#define INIT1x4() \
++	xmm4 = 0; xmm6 = 0; xmm8 = 0; xmm10 = 0;
++#define KERNEL1x4_SUB()							\
++	xmm0  = *(AO );							\
++	xmm2  = *(BO + 0);						\
++	xmm3  = *(BO + 1);						\
++	xmm4 += xmm0 * xmm2;						\
++	xmm6 += xmm0 * xmm3;						\
++	xmm2   = *(BO + 2);						\
++	xmm3   = *(BO + 3);						\
++	xmm8  += xmm0 * xmm2;						\
++	xmm10 += xmm0 * xmm3;						\
++	BO += 4;							\
++	AO += 1;
++
++
++#define SAVE1x4(ALPHA)							\
++	xmm0   = ALPHA;							\
++	xmm4  *= xmm0;							\
++	xmm6  *= xmm0;							\
++	xmm8  *= xmm0;							\
++	xmm10 *= xmm0;							\
++	*(CO1         ) += xmm4;					\
++	*(CO1 + ldc   ) += xmm6;					\
++	*(CO2         ) += xmm8;					\
++	*(CO2 + ldc   ) += xmm10;					\
++
++
++
++/*******************************************************************************************/
++
++/*******************************************************************************************
++* 2 lines of N
++*******************************************************************************************/
++
++#define INIT16x2()							\
++	zmm4 = _mm512_setzero_ps();					\
++	zmm6 = _mm512_setzero_ps();					\
++
++
++#define KERNEL16x2_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);					\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO));		\
++	zmm3   =  _mm512_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	zmm4  += zmm0 * zmm2;						\
++	zmm6  += zmm0 * zmm3;						\
++	BO += 2;							\
++	AO += 16;
++
++
++#define SAVE16x2(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	zmm4  *= zmm0;							\
++	zmm6  *= zmm0;							\
++	zmm4  += _mm512_loadu_ps(CO1);					\
++	zmm6  += _mm512_loadu_ps(CO1 + ldc);				\
++	_mm512_storeu_ps(CO1      , zmm4);				\
++	_mm512_storeu_ps(CO1 + ldc, zmm6);				\
++
++
++
++
++/*******************************************************************************************/
++
++#define INIT8x2()	\
++	ymm4 = _mm256_setzero_ps();					\
++	ymm6 = _mm256_setzero_ps();					\
++
++#define KERNEL8x2_SUB() 						\
++	ymm0   = _mm256_loadu_ps(AO);					\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO));		\
++	ymm3   =  _mm256_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	ymm4  += ymm0 * ymm2;						\
++	ymm6  += ymm0 * ymm3;						\
++	BO  += 2;							\
++	AO  += 8;
++
++
++#define SAVE8x2(ALPHA)							\
++	ymm0   = _mm256_set1_ps(ALPHA);					\
++	ymm4  *= ymm0;							\
++	ymm6  *= ymm0;							\
++	ymm4  += _mm256_loadu_ps(CO1);					\
++	ymm6  += _mm256_loadu_ps(CO1 + ldc);				\
++	_mm256_storeu_ps(CO1      , ymm4);				\
++	_mm256_storeu_ps(CO1 + ldc, ymm6);				\
++
++
++
++/*******************************************************************************************/
++
++#define INIT4x2()	\
++	xmm4 = _mm_setzero_ps(); 					\
++	xmm6 = _mm_setzero_ps(); 					\
++
++#define KERNEL4x2_SUB() 						\
++	xmm0   = _mm_loadu_ps(AO);					\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO));			\
++	xmm3   =  _mm_broadcastss_ps(_mm_load_ss(BO + 1));		\
++	xmm4  += xmm0 * xmm2;						\
++	xmm6  += xmm0 * xmm3;						\
++	BO  += 2;							\
++	AO  += 4;
++
++
++#define SAVE4x2(ALPHA)							\
++	xmm0   = _mm_set1_ps(ALPHA);					\
++	xmm4  *= xmm0;							\
++	xmm6  *= xmm0;							\
++	xmm4  += _mm_loadu_ps(CO1);					\
++	xmm6  += _mm_loadu_ps(CO1 + ldc);				\
++	_mm_storeu_ps(CO1      , xmm4);					\
++	_mm_storeu_ps(CO1 + ldc, xmm6);					\
++
++
++
++/*******************************************************************************************/
++
++
++#define INIT2x2() 	\
++	xmm4 = 0; xmm5 = 0; xmm6 = 0; xmm7 = 0; 			\
++
++#define KERNEL2x2_SUB()							\
++	xmm0  = *(AO + 0);						\
++	xmm1  = *(AO + 1);						\
++	xmm2  = *(BO + 0);						\
++	xmm3  = *(BO + 1);						\
++	xmm4 += xmm0 * xmm2;						\
++	xmm5 += xmm1 * xmm2;						\
++	xmm6 += xmm0 * xmm3;						\
++	xmm7 += xmm1 * xmm3;						\
++	BO += 2;							\
++	AO += 2;							\
++
++
++#define SAVE2x2(ALPHA)							\
++	xmm0   = ALPHA;							\
++	xmm4  *= xmm0;							\
++	xmm5  *= xmm0;							\
++	xmm6  *= xmm0;							\
++	xmm7  *= xmm0;							\
++	*(CO1         ) += xmm4;					\
++	*(CO1 +1      ) += xmm5;					\
++	*(CO1 + ldc   ) += xmm6;					\
++	*(CO1 + ldc +1) += xmm7;					\
++
++
++/*******************************************************************************************/
++
++#define INIT1x2()	\
++	xmm4 = 0; xmm6 = 0;
++
++#define KERNEL1x2_SUB()							\
++	xmm0  = *(AO);							\
++	xmm2  = *(BO + 0);						\
++	xmm3  = *(BO + 1);						\
++	xmm4 += xmm0 * xmm2;						\
++	xmm6 += xmm0 * xmm3;						\
++	BO += 2;							\
++	AO += 1;
++
++
++#define SAVE1x2(ALPHA)							\
++	xmm0   = ALPHA;							\
++	xmm4  *= xmm0;							\
++	xmm6  *= xmm0;							\
++	*(CO1         ) += xmm4;					\
++	*(CO1 + ldc   ) += xmm6;					\
++
++
++/*******************************************************************************************/
++
++/*******************************************************************************************
++* 1 line of N
++*******************************************************************************************/
++
++#define INIT16x1() \
++	zmm4 = _mm512_setzero_ps();				\
++
++#define KERNEL16x1_SUB() 						\
++	zmm0   = _mm512_loadu_ps(AO);			\
++	zmm2   =  _mm512_broadcastss_ps(_mm_load_ss(BO));		\
++	zmm4  += zmm0 * zmm2;						\
++	BO += 1;							\
++	AO += 16;
++
++
++#define SAVE16x1(ALPHA)							\
++	zmm0   = _mm512_set1_ps(ALPHA);					\
++	zmm4  *= zmm0;							\
++	zmm4  += _mm512_loadu_ps(CO1);					\
++	_mm512_storeu_ps(CO1      , zmm4);				\
++
++
++/*******************************************************************************************/
++
++#define INIT8x1()							\
++	ymm4 = _mm256_setzero_ps();					
++
++#define KERNEL8x1_SUB() 						\
++	ymm0   = _mm256_loadu_ps(AO);					\
++	ymm2   =  _mm256_broadcastss_ps(_mm_load_ss(BO));		\
++	ymm4  += ymm0 * ymm2;						\
++	BO  += 1;							\
++	AO  += 8;
++
++
++#define SAVE8x1(ALPHA)							\
++	ymm0   = _mm256_set1_ps(ALPHA);					\
++	ymm4  *= ymm0;							\
++	ymm4  += _mm256_loadu_ps(CO1);					\
++	_mm256_storeu_ps(CO1      , ymm4);				\
++
++
++/*******************************************************************************************/
++
++#define INIT4x1()							\
++	xmm4 = _mm_setzero_ps();					\
++
++#define KERNEL4x1_SUB() 						\
++	xmm0   = _mm_loadu_ps(AO);					\
++	xmm2   =  _mm_broadcastss_ps(_mm_load_ss(BO));			\
++	xmm4  += xmm0 * xmm2;						\
++	BO    += 1;							\
++	AO    += 4;
++
++
++#define SAVE4x1(ALPHA)							\
++	xmm0   = _mm_set1_ps(ALPHA);					\
++	xmm4  *= xmm0;							\
++	xmm4  += _mm_loadu_ps(CO1);					\
++	_mm_storeu_ps(CO1      , xmm4);					\
++
++
++
++/*******************************************************************************************/
++
++#define INIT2x1()							\
++	xmm4 = 0; xmm5 = 0;
++
++#define KERNEL2x1_SUB()							\
++	xmm0  = *(AO + 0);						\
++	xmm1  = *(AO + 1);						\
++	xmm2  = *(BO);							\
++	xmm4 += xmm0 * xmm2;						\
++	xmm5 += xmm1 * xmm2;						\
++	BO += 1;							\
++	AO += 2;
++
++
++#define SAVE2x1(ALPHA)							\
++	xmm0   = ALPHA;							\
++	xmm4  *= xmm0;							\
++	xmm5  *= xmm0;							\
++	*(CO1         ) += xmm4;					\
++	*(CO1 +1      ) += xmm5;					\
++
++
++/*******************************************************************************************/
++
++#define INIT1x1()							\
++	xmm4 = 0;
++
++#define KERNEL1x1_SUB()							\
++	xmm0  = *(AO);							\
++	xmm2  = *(BO);							\
++	xmm4 += xmm0 * xmm2;						\
++	BO += 1;							\
++	AO += 1;
++
++
++#define SAVE1x1(ALPHA)							\
++	xmm0   = ALPHA;							\
++	xmm4  *= xmm0;							\
++	*(CO1         ) += xmm4;					\
++
++
++/*******************************************************************************************/
++
++
++/*************************************************************************************
++* GEMM Kernel
++*************************************************************************************/
++
++int __attribute__ ((noinline))
++CNAME(BLASLONG m, BLASLONG n, BLASLONG k, float alpha, float * __restrict__ A, float * __restrict__ B, float * __restrict__ C, BLASLONG ldc)
++{
++	unsigned long M = m, N = n, K = k;
++	if (M == 0)
++		return 0;
++	if (N == 0)
++		return 0;
++	if (K == 0)
++		return 0;
++
++
++
++	// L8_0
++	while (N >= 8 && 0) {
++		float *CO1;
++		float *AO;
++		int i;
++		// L8_10
++		CO1 = C;
++		C += 8 * ldc;
++
++		AO = A;
++
++		i = m;
++
++		while (i >= 32 && 0) {
++			float *BO, *AOb;
++			// L8_11
++			__m512 zmm0, zmm0b, zmm2, zmm3, row0, row1, row2, row3, row4, row5, row6, row7, row0b, row1b, row2b, row3b, row4b, row5b, row6b, row7b;
++			BO = B;
++			int kloop = K;
++			AOb = AO + 16 * K;
++	
++			INIT32x8()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL32x8_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE32x8(alpha)
++			CO1 += 32;
++			AO  += 16 * K;
++	
++			i   -= 32;
++		}
++		while (i >= 16) {
++			float *BO;
++			// L8_11
++			__m512 zmm0, zmm2, zmm3, row0, row1, row2, row3, row4, row5, row6, row7;
++			BO = B;
++			int kloop = K;
++	
++			INIT16x8()
++
++			while (kloop > 0) {
++				KERNEL16x8_SUB()
++				kloop--;
++			}
++			SAVE16x8(alpha)
++			CO1 += 16;
++	
++			i -= 16;
++		}
++		while (i >= 8) {
++			float *BO;
++			// L8_11
++			__m256 ymm0, ymm2, ymm3, row0, row1, row2, row3, row4, row5, row6, row7;
++			BO = B;
++			int kloop = K;
++	
++			INIT8x8()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL8x8_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE8x8(alpha)
++			CO1 += 8;
++	
++			i -= 8;
++		}
++		while (i >= 4) {
++			// L8_11
++			float *BO;
++			__m128 xmm0, xmm2, xmm3, row0, row1, row2, row3, row4, row5, row6, row7;
++			BO = B;
++			int kloop = K;
++
++			INIT4x8()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL4x8_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE4x8(alpha)
++			CO1 += 4;
++
++			i -= 4;
++		}
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++
++		while (i >= 2) {
++			float *BO;
++			float xmm0, xmm1, xmm2, xmm3, row0a, row1a, row2a, row3a, row4a, row5a, row6a, row7a, row0b, row1b, row2b, row3b, row4b, row5b, row6b, row7b;
++			BO = B;
++
++			INIT2x8()
++			int kloop = K;
++			
++			while (kloop > 0) {
++				KERNEL2x8_SUB()
++				kloop--;
++			}
++			SAVE2x8(alpha)
++			CO1 += 2;
++			i -= 2;
++		}
++			// L13_40
++		while (i >= 1) {
++			float *BO;
++			float xmm0, xmm2, xmm3, row0, row1, row2, row3, row4, row5, row6, row7;
++			int kloop = K;
++			BO = B;
++			INIT1x8()
++				
++			while (kloop > 0) {
++				KERNEL1x8_SUB()
++				kloop--;
++			}
++			SAVE1x8(alpha)
++			CO1 += 1;
++			i -= 1;
++		}
++			
++		B += K * 8;
++		N -= 8;
++	}
++
++	while (N >= 4) {
++		float *CO1;
++		float *AO;
++		int i;
++		// L8_10
++		CO1 = C;
++		C += 4 * ldc;
++
++		AO = A;
++
++		i = m;
++		while (i >= 64) {
++			float *BO;
++			float *A1, *A2, *A3;
++			// L8_11
++			__m512 zmm0, zmm1, zmm2, zmm3, zmm4, zmm5, zmm6, zmm7, zmm8, zmm10, zmm14, zmm16, zmm18, zmm20, zmm24, zmm26, zmm28, zmm30, zmm34, zmm36, zmm38, zmm40;
++			BO = B;
++			int kloop = K;
++
++			A1 = AO + 16 * K;
++			A2 = A1 + 16 * K;
++			A3 = A2 + 16 * K;
++	
++			INIT64x4()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL64x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE64x4(alpha)
++			CO1 += 64;
++			AO += 48 * K;
++	
++			i -= 64;
++		}
++		while (i >= 48) {
++			float *BO;
++			float *A1, *A2;
++			// L8_11
++			__m512 zmm0, zmm1, zmm2, zmm3, zmm4, zmm5, zmm6, zmm8, zmm10, zmm14, zmm16, zmm18, zmm20, zmm24, zmm26, zmm28, zmm30;
++			BO = B;
++			int kloop = K;
++
++			A1 = AO + 16 * K;
++			A2 = A1 + 16 * K;
++	
++			INIT48x4()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL48x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE48x4(alpha)
++			CO1 += 48;
++			AO += 32 * K;
++	
++			i -= 48;
++		}
++		while (i >= 32) {
++			float *BO;
++			float *A1;
++			// L8_11
++			__m512 zmm0, zmm1, zmm2, zmm3, zmm4, zmm6, zmm8, zmm10, zmm14, zmm16, zmm18, zmm20;
++			BO = B;
++			int kloop = K;
++
++			A1 = AO + 16 * K;
++	
++			INIT32x4()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL32x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE32x4(alpha)
++			CO1 += 32;
++			AO += 16 * K;
++	
++			i -= 32;
++		}
++		while (i >= 16) {
++			float *BO;
++			float *CO2 = CO1 + 2 * ldc;
++			// L8_11
++			__m512 zmm0, zmm2, zmm3, zmm4, zmm6, zmm8, zmm10;
++			BO = B;
++			int kloop = K;
++	
++			INIT16x4()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL16x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE16x4(alpha)
++			CO1 += 16;
++	
++			i -= 16;
++		}
++		while (i >= 8) {
++			float *BO;
++			float *CO2 = CO1 + 2*ldc;
++			// L8_11
++			__m256 ymm0, ymm2, ymm3, ymm4, ymm6,ymm8,ymm10;
++			BO = B;
++			int kloop = K;
++	
++			INIT8x4()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL8x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE8x4(alpha)
++			CO1 += 8;
++	
++			i -= 8;
++		}
++		while (i >= 4) {
++			// L8_11
++			float *BO;
++			float *CO2 = CO1 + 2*ldc;
++			__m128 xmm0, xmm2, xmm3, xmm4, xmm6, xmm8, xmm10;
++			BO = B;
++			int kloop = K;
++
++			INIT4x4()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL4x4_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE4x4(alpha)
++			CO1 += 4;
++
++			i -= 4;
++		}
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++
++		while (i >= 2) {
++			float *BO;
++			float *CO2 = CO1 + 2 * ldc;
++			float xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9, xmm10, xmm11;
++			BO = B;
++
++			INIT2x4()
++			int kloop = K;
++			
++			while (kloop > 0) {
++				KERNEL2x4_SUB()
++				kloop--;
++			}
++			SAVE2x4(alpha)
++			CO1 += 2;
++			i -= 2;
++		}
++			// L13_40
++		while (i >= 1) {
++			float *BO;
++			float *CO2 = CO1 + 2 * ldc;
++			float xmm0, xmm2, xmm3, xmm4, xmm6, xmm8, xmm10;
++			int kloop = K;
++			BO = B;
++			INIT1x4()
++				
++			while (kloop > 0) {
++				KERNEL1x4_SUB()
++				kloop--;
++			}
++			SAVE1x4(alpha)
++			CO1 += 1;
++			i -= 1;
++		}
++			
++		B += K * 4;
++		N -= 4;
++	}
++
++/**************************************************************************************************/
++
++		// L8_0
++	while (N >= 2) {
++		float *CO1;
++		float *AO;
++		int i;
++		// L8_10
++		CO1 = C;
++		C += 2 * ldc;
++
++		AO = A;
++
++		i = m;
++		while (i >= 16) {
++			float *BO;
++
++			// L8_11
++			__m512 zmm0, zmm2, zmm3, zmm4, zmm6;
++			BO = B;
++			int kloop = K;
++	
++			INIT16x2()
++
++			while (kloop > 0) {
++				// L12_17
++				KERNEL16x2_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE16x2(alpha)
++			CO1 += 16;
++	
++			i -= 16;
++		}
++		while (i >= 8) {
++			float *BO;
++			__m256 ymm0, ymm2, ymm3, ymm4, ymm6;
++			// L8_11
++			BO = B;
++			int kloop = K;
++
++			INIT8x2()
++
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL8x2_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE8x2(alpha)
++			CO1 += 8;
++
++			i-=8;
++		}
++
++		while (i >= 4) {
++			float *BO;
++			__m128 xmm0, xmm2, xmm3, xmm4, xmm6;
++			// L8_11
++			BO = B;
++			int kloop = K;
++	
++			INIT4x2()
++
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL4x2_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE4x2(alpha)
++			CO1 += 4;
++	
++			i-=4;
++		}
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++
++		while (i >= 2) {
++			float *BO;
++			float xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7;
++			int kloop = K;
++			BO = B;
++
++			INIT2x2()
++				
++			while (kloop > 0) {
++				KERNEL2x2_SUB()
++				kloop--;
++			}
++			SAVE2x2(alpha)
++			CO1 += 2;
++			i -= 2;
++		}
++			// L13_40
++		while (i >= 1) {
++			float *BO;
++			float xmm0, xmm2, xmm3, xmm4, xmm6;
++			int kloop = K;
++			BO = B;
++
++			INIT1x2()
++					
++			while (kloop > 0) {
++				KERNEL1x2_SUB()
++				kloop--;
++			}
++			SAVE1x2(alpha)
++			CO1 += 1;
++			i -= 1;
++		}
++			
++		B += K * 2;
++		N -= 2;
++	}
++
++		// L8_0
++	while (N >= 1) {
++		// L8_10
++		float *CO1;
++		float *AO;
++		int i;
++
++		CO1 = C;
++		C += ldc;
++
++		AO = A;
++
++		i = m;
++		while (i >= 16) {
++			float *BO;
++			__m512 zmm0, zmm2, zmm4;
++			// L8_11
++			BO = B;
++			int kloop = K;
++
++			INIT16x1()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL16x1_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE16x1(alpha)
++			CO1 += 16;
++
++			i-= 16;
++		}
++		while (i >= 8) {
++			float *BO;
++			__m256 ymm0, ymm2, ymm4;
++			// L8_11
++			BO = B;
++			int kloop = K;
++
++			INIT8x1()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL8x1_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE8x1(alpha)
++			CO1 += 8;
++
++			i-= 8;
++		}
++		while (i >= 4) {
++			float *BO;
++			__m128 xmm0, xmm2, xmm4;
++			// L8_11
++			BO = B;
++			int kloop = K;
++
++			INIT4x1()
++			// L8_16
++			while (kloop > 0) {
++				// L12_17
++				KERNEL4x1_SUB()
++				kloop--;
++			}
++			// L8_19
++			SAVE4x1(alpha)
++			CO1 += 4;
++
++			i-= 4;
++		}
++
++/**************************************************************************
++* Rest of M 
++***************************************************************************/
++
++		while (i >= 2) {
++			float *BO;
++			float xmm0, xmm1, xmm2, xmm4, xmm5;
++			int kloop = K;
++			BO = B;
++
++			INIT2x1()
++				
++			while (kloop > 0) {
++				KERNEL2x1_SUB()
++				kloop--;
++			}
++			SAVE2x1(alpha)
++			CO1 += 2;
++			i -= 2;
++		}
++				// L13_40
++		while (i >= 1) {
++			float *BO;
++			float xmm0, xmm2, xmm4;
++			int kloop = K;
++
++			BO = B;
++			INIT1x1()
++				
++
++			while (kloop > 0) {
++				KERNEL1x1_SUB()
++				kloop--;
++			}
++			SAVE1x1(alpha)
++			CO1 += 1;
++			i -= 1;
++		}
++			
++		B += K * 1;
++		N -= 1;
++	}
++
++
++	return 0;
++}
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_ncopy_4_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/sgemm_ncopy_4_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_ncopy_4_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/sgemm_ncopy_4_skylakex.c	2018-10-07 17:22:14.964123264 +0000
+@@ -0,0 +1,230 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include <stdio.h>
++#include "common.h"
++
++int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __restrict b){
++  BLASLONG i, j;
++
++  FLOAT *a_offset, *a_offset1, *a_offset2, *a_offset3, *a_offset4;
++  FLOAT *b_offset;
++  FLOAT  ctemp1,  ctemp2,  ctemp3,  ctemp4;
++  FLOAT  ctemp5,  ctemp6,  ctemp7,  ctemp8;
++  FLOAT  ctemp9, ctemp10, ctemp11, ctemp12;
++  FLOAT ctemp13, ctemp14, ctemp15, ctemp16;
++
++  a_offset = a;
++  b_offset = b;
++
++  j = (n >> 2);
++  if (j > 0){
++    do{
++      a_offset1  = a_offset;
++      a_offset2  = a_offset1 + lda;
++      a_offset3  = a_offset2 + lda;
++      a_offset4  = a_offset3 + lda;
++      a_offset += 4 * lda;
++
++      i = (m >> 2);
++      if (i > 0){
++	do{
++	  ctemp1  = *(a_offset1 + 0);
++	  ctemp2  = *(a_offset1 + 1);
++	  ctemp3  = *(a_offset1 + 2);
++	  ctemp4  = *(a_offset1 + 3);
++
++	  ctemp5  = *(a_offset2 + 0);
++	  ctemp6  = *(a_offset2 + 1);
++	  ctemp7  = *(a_offset2 + 2);
++	  ctemp8  = *(a_offset2 + 3);
++
++	  ctemp9  = *(a_offset3 + 0);
++	  ctemp10 = *(a_offset3 + 1);
++	  ctemp11 = *(a_offset3 + 2);
++	  ctemp12 = *(a_offset3 + 3);
++
++	  ctemp13 = *(a_offset4 + 0);
++	  ctemp14 = *(a_offset4 + 1);
++	  ctemp15 = *(a_offset4 + 2);
++	  ctemp16 = *(a_offset4 + 3);
++
++	  *(b_offset +  0) = ctemp1;
++	  *(b_offset +  1) = ctemp5;
++	  *(b_offset +  2) = ctemp9;
++	  *(b_offset +  3) = ctemp13;
++
++	  *(b_offset +  4) = ctemp2;
++	  *(b_offset +  5) = ctemp6;
++	  *(b_offset +  6) = ctemp10;
++	  *(b_offset +  7) = ctemp14;
++
++	  *(b_offset +  8) = ctemp3;
++	  *(b_offset +  9) = ctemp7;
++	  *(b_offset + 10) = ctemp11;
++	  *(b_offset + 11) = ctemp15;
++
++	  *(b_offset + 12) = ctemp4;
++	  *(b_offset + 13) = ctemp8;
++	  *(b_offset + 14) = ctemp12;
++	  *(b_offset + 15) = ctemp16;
++
++	  a_offset1 += 4;
++	  a_offset2 += 4;
++	  a_offset3 += 4;
++	  a_offset4 += 4;
++
++	  b_offset += 16;
++	  i --;
++	}while(i > 0);
++      }
++
++      i = (m & 3);
++      if (i > 0){
++	do{
++	  ctemp1  = *(a_offset1 + 0);
++	  ctemp5  = *(a_offset2 + 0);
++	  ctemp9  = *(a_offset3 + 0);
++	  ctemp13 = *(a_offset4 + 0);
++
++	  *(b_offset +  0) = ctemp1;
++	  *(b_offset +  1) = ctemp5;
++	  *(b_offset +  2) = ctemp9;
++	  *(b_offset +  3) = ctemp13;
++
++	  a_offset1 ++;
++	  a_offset2 ++;
++	  a_offset3 ++;
++	  a_offset4 ++;
++
++	  b_offset += 4;
++	  i --;
++	}while(i > 0);
++      }
++      j--;
++    }while(j > 0);
++  } /* end of if(j > 0) */
++
++  if (n & 2){
++    a_offset1  = a_offset;
++    a_offset2  = a_offset1 + lda;
++    a_offset += 2 * lda;
++
++    i = (m >> 2);
++    if (i > 0){
++      do{
++	ctemp1  = *(a_offset1 + 0);
++	ctemp2  = *(a_offset1 + 1);
++	ctemp3  = *(a_offset1 + 2);
++	ctemp4  = *(a_offset1 + 3);
++
++	ctemp5  = *(a_offset2 + 0);
++	ctemp6  = *(a_offset2 + 1);
++	ctemp7  = *(a_offset2 + 2);
++	ctemp8  = *(a_offset2 + 3);
++
++	*(b_offset +  0) = ctemp1;
++	*(b_offset +  1) = ctemp5;
++	*(b_offset +  2) = ctemp2;
++	*(b_offset +  3) = ctemp6;
++
++	*(b_offset +  4) = ctemp3;
++	*(b_offset +  5) = ctemp7;
++	*(b_offset +  6) = ctemp4;
++	*(b_offset +  7) = ctemp8;
++
++	a_offset1 += 4;
++	a_offset2 += 4;
++	b_offset  += 8;
++	i --;
++      }while(i > 0);
++    }
++
++    i = (m & 3);
++    if (i > 0){
++      do{
++	ctemp1  = *(a_offset1 + 0);
++	ctemp5  = *(a_offset2 + 0);
++
++	*(b_offset +  0) = ctemp1;
++	*(b_offset +  1) = ctemp5;
++
++	a_offset1 ++;
++	a_offset2 ++;
++	b_offset += 2;
++	i --;
++      }while(i > 0);
++    }
++  } /* end of if(j > 0) */
++
++  if (n & 1){
++    a_offset1  = a_offset;
++
++    i = (m >> 2);
++    if (i > 0){
++      do{
++	ctemp1  = *(a_offset1 + 0);
++	ctemp2  = *(a_offset1 + 1);
++	ctemp3  = *(a_offset1 + 2);
++	ctemp4  = *(a_offset1 + 3);
++
++	*(b_offset +  0) = ctemp1;
++	*(b_offset +  1) = ctemp2;
++	*(b_offset +  2) = ctemp3;
++	*(b_offset +  3) = ctemp4;
++
++	a_offset1 += 4;
++	b_offset  += 4;
++	i --;
++      }while(i > 0);
++    }
++
++    i = (m & 3);
++    if (i > 0){
++      do{
++	ctemp1  = *(a_offset1 + 0);
++	*(b_offset +  0) = ctemp1;
++	a_offset1 ++;
++	b_offset += 1;
++	i --;
++      }while(i > 0);
++    }
++  } /* end of if(j > 0) */
++
++  return 0;
++}
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_ncopy_8_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/sgemm_ncopy_8_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_ncopy_8_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/sgemm_ncopy_8_skylakex.c	2018-10-07 17:22:14.964123264 +0000
+@@ -0,0 +1,422 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include <stdio.h>
++#include "common.h"
++
++int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __restrict b){
++  BLASLONG i, j;
++
++  FLOAT *aoffset;
++  FLOAT *aoffset1, *aoffset2, *aoffset3, *aoffset4;
++  FLOAT *aoffset5, *aoffset6, *aoffset7, *aoffset8;
++
++  FLOAT *boffset;
++  FLOAT ctemp01, ctemp02, ctemp03, ctemp04;
++  FLOAT ctemp05, ctemp06, ctemp07, ctemp08;
++  FLOAT ctemp09, ctemp10, ctemp11, ctemp12;
++  FLOAT ctemp13, ctemp14, ctemp15, ctemp16;
++  FLOAT ctemp17, ctemp18, ctemp19, ctemp20;
++  FLOAT ctemp21, ctemp22, ctemp23, ctemp24;
++  FLOAT ctemp25, ctemp26, ctemp27, ctemp28;
++  FLOAT ctemp29, ctemp30, ctemp31, ctemp32;
++  FLOAT ctemp33, ctemp34, ctemp35, ctemp36;
++  FLOAT ctemp37, ctemp38, ctemp39, ctemp40;
++  FLOAT ctemp41, ctemp42, ctemp43, ctemp44;
++  FLOAT ctemp45, ctemp46, ctemp47, ctemp48;
++  FLOAT ctemp49, ctemp50, ctemp51, ctemp52;
++  FLOAT ctemp53, ctemp54, ctemp55, ctemp56;
++  FLOAT ctemp57, ctemp58, ctemp59, ctemp60;
++  FLOAT ctemp61, ctemp62, ctemp63, ctemp64;
++
++
++  aoffset = a;
++  boffset = b;
++
++  j = (n >> 3);
++  if (j > 0){
++    do{
++      aoffset1  = aoffset;
++      aoffset2  = aoffset1 + lda;
++      aoffset3  = aoffset2 + lda;
++      aoffset4  = aoffset3 + lda;
++      aoffset5  = aoffset4 + lda;
++      aoffset6  = aoffset5 + lda;
++      aoffset7  = aoffset6 + lda;
++      aoffset8  = aoffset7 + lda;
++      aoffset += 8 * lda;
++
++      i = (m >> 3);
++      if (i > 0){
++	do{
++	  ctemp01 = *(aoffset1 +  0);
++	  ctemp02 = *(aoffset1 +  1);
++	  ctemp03 = *(aoffset1 +  2);
++	  ctemp04 = *(aoffset1 +  3);
++	  ctemp05 = *(aoffset1 +  4);
++	  ctemp06 = *(aoffset1 +  5);
++	  ctemp07 = *(aoffset1 +  6);
++	  ctemp08 = *(aoffset1 +  7);
++
++	  ctemp09 = *(aoffset2 +  0);
++	  ctemp10 = *(aoffset2 +  1);
++	  ctemp11 = *(aoffset2 +  2);
++	  ctemp12 = *(aoffset2 +  3);
++	  ctemp13 = *(aoffset2 +  4);
++	  ctemp14 = *(aoffset2 +  5);
++	  ctemp15 = *(aoffset2 +  6);
++	  ctemp16 = *(aoffset2 +  7);
++
++	  ctemp17 = *(aoffset3 +  0);
++	  ctemp18 = *(aoffset3 +  1);
++	  ctemp19 = *(aoffset3 +  2);
++	  ctemp20 = *(aoffset3 +  3);
++	  ctemp21 = *(aoffset3 +  4);
++	  ctemp22 = *(aoffset3 +  5);
++	  ctemp23 = *(aoffset3 +  6);
++	  ctemp24 = *(aoffset3 +  7);
++
++	  ctemp25 = *(aoffset4 +  0);
++	  ctemp26 = *(aoffset4 +  1);
++	  ctemp27 = *(aoffset4 +  2);
++	  ctemp28 = *(aoffset4 +  3);
++	  ctemp29 = *(aoffset4 +  4);
++	  ctemp30 = *(aoffset4 +  5);
++	  ctemp31 = *(aoffset4 +  6);
++	  ctemp32 = *(aoffset4 +  7);
++
++	  ctemp33 = *(aoffset5 +  0);
++	  ctemp34 = *(aoffset5 +  1);
++	  ctemp35 = *(aoffset5 +  2);
++	  ctemp36 = *(aoffset5 +  3);
++	  ctemp37 = *(aoffset5 +  4);
++	  ctemp38 = *(aoffset5 +  5);
++	  ctemp39 = *(aoffset5 +  6);
++	  ctemp40 = *(aoffset5 +  7);
++
++	  ctemp41 = *(aoffset6 +  0);
++	  ctemp42 = *(aoffset6 +  1);
++	  ctemp43 = *(aoffset6 +  2);
++	  ctemp44 = *(aoffset6 +  3);
++	  ctemp45 = *(aoffset6 +  4);
++	  ctemp46 = *(aoffset6 +  5);
++	  ctemp47 = *(aoffset6 +  6);
++	  ctemp48 = *(aoffset6 +  7);
++
++	  ctemp49 = *(aoffset7 +  0);
++	  ctemp50 = *(aoffset7 +  1);
++	  ctemp51 = *(aoffset7 +  2);
++	  ctemp52 = *(aoffset7 +  3);
++	  ctemp53 = *(aoffset7 +  4);
++	  ctemp54 = *(aoffset7 +  5);
++	  ctemp55 = *(aoffset7 +  6);
++	  ctemp56 = *(aoffset7 +  7);
++
++	  ctemp57 = *(aoffset8 +  0);
++	  ctemp58 = *(aoffset8 +  1);
++	  ctemp59 = *(aoffset8 +  2);
++	  ctemp60 = *(aoffset8 +  3);
++	  ctemp61 = *(aoffset8 +  4);
++	  ctemp62 = *(aoffset8 +  5);
++	  ctemp63 = *(aoffset8 +  6);
++	  ctemp64 = *(aoffset8 +  7);
++
++	  *(boffset +  0) = ctemp01;
++	  *(boffset +  1) = ctemp09;
++	  *(boffset +  2) = ctemp17;
++	  *(boffset +  3) = ctemp25;
++	  *(boffset +  4) = ctemp33;
++	  *(boffset +  5) = ctemp41;
++	  *(boffset +  6) = ctemp49;
++	  *(boffset +  7) = ctemp57;
++
++	  *(boffset +  8) = ctemp02;
++	  *(boffset +  9) = ctemp10;
++	  *(boffset + 10) = ctemp18;
++	  *(boffset + 11) = ctemp26;
++	  *(boffset + 12) = ctemp34;
++	  *(boffset + 13) = ctemp42;
++	  *(boffset + 14) = ctemp50;
++	  *(boffset + 15) = ctemp58;
++
++	  *(boffset + 16) = ctemp03;
++	  *(boffset + 17) = ctemp11;
++	  *(boffset + 18) = ctemp19;
++	  *(boffset + 19) = ctemp27;
++	  *(boffset + 20) = ctemp35;
++	  *(boffset + 21) = ctemp43;
++	  *(boffset + 22) = ctemp51;
++	  *(boffset + 23) = ctemp59;
++
++	  *(boffset + 24) = ctemp04;
++	  *(boffset + 25) = ctemp12;
++	  *(boffset + 26) = ctemp20;
++	  *(boffset + 27) = ctemp28;
++	  *(boffset + 28) = ctemp36;
++	  *(boffset + 29) = ctemp44;
++	  *(boffset + 30) = ctemp52;
++	  *(boffset + 31) = ctemp60;
++
++	  *(boffset + 32) = ctemp05;
++	  *(boffset + 33) = ctemp13;
++	  *(boffset + 34) = ctemp21;
++	  *(boffset + 35) = ctemp29;
++	  *(boffset + 36) = ctemp37;
++	  *(boffset + 37) = ctemp45;
++	  *(boffset + 38) = ctemp53;
++	  *(boffset + 39) = ctemp61;
++
++	  *(boffset + 40) = ctemp06;
++	  *(boffset + 41) = ctemp14;
++	  *(boffset + 42) = ctemp22;
++	  *(boffset + 43) = ctemp30;
++	  *(boffset + 44) = ctemp38;
++	  *(boffset + 45) = ctemp46;
++	  *(boffset + 46) = ctemp54;
++	  *(boffset + 47) = ctemp62;
++
++	  *(boffset + 48) = ctemp07;
++	  *(boffset + 49) = ctemp15;
++	  *(boffset + 50) = ctemp23;
++	  *(boffset + 51) = ctemp31;
++	  *(boffset + 52) = ctemp39;
++	  *(boffset + 53) = ctemp47;
++	  *(boffset + 54) = ctemp55;
++	  *(boffset + 55) = ctemp63;
++
++	  *(boffset + 56) = ctemp08;
++	  *(boffset + 57) = ctemp16;
++	  *(boffset + 58) = ctemp24;
++	  *(boffset + 59) = ctemp32;
++	  *(boffset + 60) = ctemp40;
++	  *(boffset + 61) = ctemp48;
++	  *(boffset + 62) = ctemp56;
++	  *(boffset + 63) = ctemp64;
++
++	  aoffset1 +=  8;
++	  aoffset2 +=  8;
++	  aoffset3 +=  8;
++	  aoffset4 +=  8;
++	  aoffset5 +=  8;
++	  aoffset6 +=  8;
++	  aoffset7 +=  8;
++	  aoffset8 +=  8;
++	  boffset  += 64;
++	  i --;
++	}while(i > 0);
++      }
++
++      i = (m & 7);
++      if (i > 0){
++	do{
++	  ctemp01 = *(aoffset1 +  0);
++	  ctemp09 = *(aoffset2 +  0);
++	  ctemp17 = *(aoffset3 +  0);
++	  ctemp25 = *(aoffset4 +  0);
++	  ctemp33 = *(aoffset5 +  0);
++	  ctemp41 = *(aoffset6 +  0);
++	  ctemp49 = *(aoffset7 +  0);
++	  ctemp57 = *(aoffset8 +  0);
++
++	  *(boffset +  0) = ctemp01;
++	  *(boffset +  1) = ctemp09;
++	  *(boffset +  2) = ctemp17;
++	  *(boffset +  3) = ctemp25;
++	  *(boffset +  4) = ctemp33;
++	  *(boffset +  5) = ctemp41;
++	  *(boffset +  6) = ctemp49;
++	  *(boffset +  7) = ctemp57;
++
++	  aoffset1 ++;
++	  aoffset2 ++;
++	  aoffset3 ++;
++	  aoffset4 ++;
++	  aoffset5 ++;
++	  aoffset6 ++;
++	  aoffset7 ++;
++	  aoffset8 ++;
++
++	  boffset += 8;
++	  i --;
++	}while(i > 0);
++      }
++      j--;
++    }while(j > 0);
++  } /* end of if(j > 0) */
++
++  if (n & 4){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset3  = aoffset2 + lda;
++    aoffset4  = aoffset3 + lda;
++    aoffset += 4 * lda;
++
++    i = (m >> 2);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset1 +  2);
++	ctemp04 = *(aoffset1 +  3);
++
++	ctemp05 = *(aoffset2 +  0);
++	ctemp06 = *(aoffset2 +  1);
++	ctemp07 = *(aoffset2 +  2);
++	ctemp08 = *(aoffset2 +  3);
++
++	ctemp09 = *(aoffset3 +  0);
++	ctemp10 = *(aoffset3 +  1);
++	ctemp11 = *(aoffset3 +  2);
++	ctemp12 = *(aoffset3 +  3);
++
++	ctemp13 = *(aoffset4 +  0);
++	ctemp14 = *(aoffset4 +  1);
++	ctemp15 = *(aoffset4 +  2);
++	ctemp16 = *(aoffset4 +  3);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp05;
++	*(boffset +  2) = ctemp09;
++	*(boffset +  3) = ctemp13;
++
++	*(boffset +  4) = ctemp02;
++	*(boffset +  5) = ctemp06;
++	*(boffset +  6) = ctemp10;
++	*(boffset +  7) = ctemp14;
++
++	*(boffset +  8) = ctemp03;
++	*(boffset +  9) = ctemp07;
++	*(boffset + 10) = ctemp11;
++	*(boffset + 11) = ctemp15;
++
++	*(boffset + 12) = ctemp04;
++	*(boffset + 13) = ctemp08;
++	*(boffset + 14) = ctemp12;
++	*(boffset + 15) = ctemp16;
++
++	aoffset1 +=  4;
++	aoffset2 +=  4;
++	aoffset3 +=  4;
++	aoffset4 +=  4;
++	boffset  +=  16;
++	i --;
++      }while(i > 0);
++    }
++
++    i = (m & 3);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset2 +  0);
++	ctemp03 = *(aoffset3 +  0);
++	ctemp04 = *(aoffset4 +  0);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++	*(boffset +  2) = ctemp03;
++	*(boffset +  3) = ctemp04;
++
++	aoffset1 ++;
++	aoffset2 ++;
++	aoffset3 ++;
++	aoffset4 ++;
++
++	boffset += 4;
++	i --;
++      }while(i > 0);
++    }
++  } /* end of if(j > 0) */
++
++  if (n & 2){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset1 + lda;
++    aoffset += 2 * lda;
++
++    i = (m >> 1);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset2 +  0);
++	ctemp04 = *(aoffset2 +  1);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp03;
++	*(boffset +  2) = ctemp02;
++	*(boffset +  3) = ctemp04;
++
++	aoffset1 +=  2;
++	aoffset2 +=  2;
++	boffset  +=  4;
++	i --;
++      }while(i > 0);
++    }
++
++    if (m & 1){
++      ctemp01 = *(aoffset1 +  0);
++      ctemp02 = *(aoffset2 +  0);
++
++      *(boffset +  0) = ctemp01;
++      *(boffset +  1) = ctemp02;
++
++      aoffset1 ++;
++      aoffset2 ++;
++      boffset += 2;
++    }
++  } /* end of if(j > 0) */
++
++  if (n & 1){
++    aoffset1  = aoffset;
++
++    i = m;
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++
++	*(boffset +  0) = ctemp01;
++
++	aoffset1 ++;
++	boffset  ++;
++	i --;
++      }while(i > 0);
++    }
++
++  } /* end of if(j > 0) */
++
++  return 0;
++}
+diff -purN OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_tcopy_16_skylakex.c OpenBLAS-0.3.3/kernel/x86_64/sgemm_tcopy_16_skylakex.c
+--- OpenBLAS-0.3.3.org/kernel/x86_64/sgemm_tcopy_16_skylakex.c	1970-01-01 00:00:00.000000000 +0000
++++ OpenBLAS-0.3.3/kernel/x86_64/sgemm_tcopy_16_skylakex.c	2018-10-07 17:22:14.964123264 +0000
+@@ -0,0 +1,387 @@
++/*********************************************************************/
++/* Copyright 2009, 2010 The University of Texas at Austin.           */
++/* All rights reserved.                                              */
++/*                                                                   */
++/* Redistribution and use in source and binary forms, with or        */
++/* without modification, are permitted provided that the following   */
++/* conditions are met:                                               */
++/*                                                                   */
++/*   1. Redistributions of source code must retain the above         */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer.                                                  */
++/*                                                                   */
++/*   2. Redistributions in binary form must reproduce the above      */
++/*      copyright notice, this list of conditions and the following  */
++/*      disclaimer in the documentation and/or other materials       */
++/*      provided with the distribution.                              */
++/*                                                                   */
++/*    THIS  SOFTWARE IS PROVIDED  BY THE  UNIVERSITY OF  TEXAS AT    */
++/*    AUSTIN  ``AS IS''  AND ANY  EXPRESS OR  IMPLIED WARRANTIES,    */
++/*    INCLUDING, BUT  NOT LIMITED  TO, THE IMPLIED  WARRANTIES OF    */
++/*    MERCHANTABILITY  AND FITNESS FOR  A PARTICULAR  PURPOSE ARE    */
++/*    DISCLAIMED.  IN  NO EVENT SHALL THE UNIVERSITY  OF TEXAS AT    */
++/*    AUSTIN OR CONTRIBUTORS BE  LIABLE FOR ANY DIRECT, INDIRECT,    */
++/*    INCIDENTAL,  SPECIAL, EXEMPLARY,  OR  CONSEQUENTIAL DAMAGES    */
++/*    (INCLUDING, BUT  NOT LIMITED TO,  PROCUREMENT OF SUBSTITUTE    */
++/*    GOODS  OR  SERVICES; LOSS  OF  USE,  DATA,  OR PROFITS;  OR    */
++/*    BUSINESS INTERRUPTION) HOWEVER CAUSED  AND ON ANY THEORY OF    */
++/*    LIABILITY, WHETHER  IN CONTRACT, STRICT  LIABILITY, OR TORT    */
++/*    (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY WAY OUT    */
++/*    OF  THE  USE OF  THIS  SOFTWARE,  EVEN  IF ADVISED  OF  THE    */
++/*    POSSIBILITY OF SUCH DAMAGE.                                    */
++/*                                                                   */
++/* The views and conclusions contained in the software and           */
++/* documentation are those of the authors and should not be          */
++/* interpreted as representing official policies, either expressed   */
++/* or implied, of The University of Texas at Austin.                 */
++/*********************************************************************/
++
++#include <stdio.h>
++#include "common.h"
++
++int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __restrict b){
++
++  BLASLONG i, j;
++
++  FLOAT *aoffset;
++  FLOAT *aoffset1, *aoffset2;
++  FLOAT *boffset;
++
++  FLOAT ctemp01, ctemp02, ctemp03, ctemp04;
++  FLOAT ctemp05, ctemp06, ctemp07, ctemp08;
++  FLOAT ctemp09, ctemp10, ctemp11, ctemp12;
++  FLOAT ctemp13, ctemp14, ctemp15, ctemp16;
++  FLOAT ctemp17, ctemp18, ctemp19, ctemp20;
++  FLOAT ctemp21, ctemp22, ctemp23, ctemp24;
++  FLOAT ctemp25, ctemp26, ctemp27, ctemp28;
++  FLOAT ctemp29, ctemp30, ctemp31, ctemp32;
++
++  aoffset   = a;
++  boffset   = b;
++
++#if 0
++  fprintf(stderr, "m = %d n = %d\n", m, n);
++#endif
++
++  j = (n >> 4);
++  if (j > 0){
++    do{
++      aoffset1  = aoffset;
++      aoffset2  = aoffset + lda;
++      aoffset += 16;
++
++      i = (m >> 1);
++      if (i > 0){
++	do{
++	  ctemp01 = *(aoffset1 +  0);
++	  ctemp02 = *(aoffset1 +  1);
++	  ctemp03 = *(aoffset1 +  2);
++	  ctemp04 = *(aoffset1 +  3);
++	  ctemp05 = *(aoffset1 +  4);
++	  ctemp06 = *(aoffset1 +  5);
++	  ctemp07 = *(aoffset1 +  6);
++	  ctemp08 = *(aoffset1 +  7);
++	  ctemp09 = *(aoffset1 +  8);
++	  ctemp10 = *(aoffset1 +  9);
++	  ctemp11 = *(aoffset1 + 10);
++	  ctemp12 = *(aoffset1 + 11);
++	  ctemp13 = *(aoffset1 + 12);
++	  ctemp14 = *(aoffset1 + 13);
++	  ctemp15 = *(aoffset1 + 14);
++	  ctemp16 = *(aoffset1 + 15);
++
++	  ctemp17 = *(aoffset2 +  0);
++	  ctemp18 = *(aoffset2 +  1);
++	  ctemp19 = *(aoffset2 +  2);
++	  ctemp20 = *(aoffset2 +  3);
++	  ctemp21 = *(aoffset2 +  4);
++	  ctemp22 = *(aoffset2 +  5);
++	  ctemp23 = *(aoffset2 +  6);
++	  ctemp24 = *(aoffset2 +  7);
++	  ctemp25 = *(aoffset2 +  8);
++	  ctemp26 = *(aoffset2 +  9);
++	  ctemp27 = *(aoffset2 + 10);
++	  ctemp28 = *(aoffset2 + 11);
++	  ctemp29 = *(aoffset2 + 12);
++	  ctemp30 = *(aoffset2 + 13);
++	  ctemp31 = *(aoffset2 + 14);
++	  ctemp32 = *(aoffset2 + 15);
++
++	  *(boffset +  0) = ctemp01;
++	  *(boffset +  1) = ctemp02;
++	  *(boffset +  2) = ctemp03;
++	  *(boffset +  3) = ctemp04;
++	  *(boffset +  4) = ctemp05;
++	  *(boffset +  5) = ctemp06;
++	  *(boffset +  6) = ctemp07;
++	  *(boffset +  7) = ctemp08;
++
++	  *(boffset +  8) = ctemp09;
++	  *(boffset +  9) = ctemp10;
++	  *(boffset + 10) = ctemp11;
++	  *(boffset + 11) = ctemp12;
++	  *(boffset + 12) = ctemp13;
++	  *(boffset + 13) = ctemp14;
++	  *(boffset + 14) = ctemp15;
++	  *(boffset + 15) = ctemp16;
++
++	  *(boffset + 16) = ctemp17;
++	  *(boffset + 17) = ctemp18;
++	  *(boffset + 18) = ctemp19;
++	  *(boffset + 19) = ctemp20;
++	  *(boffset + 20) = ctemp21;
++	  *(boffset + 21) = ctemp22;
++	  *(boffset + 22) = ctemp23;
++	  *(boffset + 23) = ctemp24;
++
++	  *(boffset + 24) = ctemp25;
++	  *(boffset + 25) = ctemp26;
++	  *(boffset + 26) = ctemp27;
++	  *(boffset + 27) = ctemp28;
++	  *(boffset + 28) = ctemp29;
++	  *(boffset + 29) = ctemp30;
++	  *(boffset + 30) = ctemp31;
++	  *(boffset + 31) = ctemp32;
++
++	  aoffset1 +=  2 * lda;
++	  aoffset2 +=  2 * lda;
++	  boffset   += 32;
++
++	  i --;
++	}while(i > 0);
++      }
++
++      if (m & 1){
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset1 +  2);
++	ctemp04 = *(aoffset1 +  3);
++	ctemp05 = *(aoffset1 +  4);
++	ctemp06 = *(aoffset1 +  5);
++	ctemp07 = *(aoffset1 +  6);
++	ctemp08 = *(aoffset1 +  7);
++	ctemp09 = *(aoffset1 +  8);
++	ctemp10 = *(aoffset1 +  9);
++	ctemp11 = *(aoffset1 + 10);
++	ctemp12 = *(aoffset1 + 11);
++	ctemp13 = *(aoffset1 + 12);
++	ctemp14 = *(aoffset1 + 13);
++	ctemp15 = *(aoffset1 + 14);
++	ctemp16 = *(aoffset1 + 15);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++	*(boffset +  2) = ctemp03;
++	*(boffset +  3) = ctemp04;
++	*(boffset +  4) = ctemp05;
++	*(boffset +  5) = ctemp06;
++	*(boffset +  6) = ctemp07;
++	*(boffset +  7) = ctemp08;
++
++	*(boffset +  8) = ctemp09;
++	*(boffset +  9) = ctemp10;
++	*(boffset + 10) = ctemp11;
++	*(boffset + 11) = ctemp12;
++	*(boffset + 12) = ctemp13;
++	*(boffset + 13) = ctemp14;
++	*(boffset + 14) = ctemp15;
++	*(boffset + 15) = ctemp16;
++
++	boffset   += 16;
++      }
++
++      j--;
++    }while(j > 0);
++  } /* end of if(j > 0) */
++
++  if (n & 8){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset + lda;
++    aoffset += 8;
++
++    i = (m >> 1);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset1 +  2);
++	ctemp04 = *(aoffset1 +  3);
++	ctemp05 = *(aoffset1 +  4);
++	ctemp06 = *(aoffset1 +  5);
++	ctemp07 = *(aoffset1 +  6);
++	ctemp08 = *(aoffset1 +  7);
++
++	ctemp09 = *(aoffset2 +  0);
++	ctemp10 = *(aoffset2 +  1);
++	ctemp11 = *(aoffset2 +  2);
++	ctemp12 = *(aoffset2 +  3);
++	ctemp13 = *(aoffset2 +  4);
++	ctemp14 = *(aoffset2 +  5);
++	ctemp15 = *(aoffset2 +  6);
++	ctemp16 = *(aoffset2 +  7);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++	*(boffset +  2) = ctemp03;
++	*(boffset +  3) = ctemp04;
++	*(boffset +  4) = ctemp05;
++	*(boffset +  5) = ctemp06;
++	*(boffset +  6) = ctemp07;
++	*(boffset +  7) = ctemp08;
++
++	*(boffset +  8) = ctemp09;
++	*(boffset +  9) = ctemp10;
++	*(boffset + 10) = ctemp11;
++	*(boffset + 11) = ctemp12;
++	*(boffset + 12) = ctemp13;
++	*(boffset + 13) = ctemp14;
++	*(boffset + 14) = ctemp15;
++	*(boffset + 15) = ctemp16;
++
++	aoffset1 +=  2 * lda;
++	aoffset2 +=  2 * lda;
++	boffset   += 16;
++
++	i --;
++      }while(i > 0);
++    }
++
++    if (m & 1){
++      ctemp01 = *(aoffset1 +  0);
++      ctemp02 = *(aoffset1 +  1);
++      ctemp03 = *(aoffset1 +  2);
++      ctemp04 = *(aoffset1 +  3);
++      ctemp05 = *(aoffset1 +  4);
++      ctemp06 = *(aoffset1 +  5);
++      ctemp07 = *(aoffset1 +  6);
++      ctemp08 = *(aoffset1 +  7);
++
++      *(boffset +  0) = ctemp01;
++      *(boffset +  1) = ctemp02;
++      *(boffset +  2) = ctemp03;
++      *(boffset +  3) = ctemp04;
++      *(boffset +  4) = ctemp05;
++      *(boffset +  5) = ctemp06;
++      *(boffset +  6) = ctemp07;
++      *(boffset +  7) = ctemp08;
++
++      boffset   += 8;
++    }
++  }
++
++  if (n & 4){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset + lda;
++    aoffset += 4;
++
++    i = (m >> 1);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset1 +  2);
++	ctemp04 = *(aoffset1 +  3);
++
++	ctemp05 = *(aoffset2 +  0);
++	ctemp06 = *(aoffset2 +  1);
++	ctemp07 = *(aoffset2 +  2);
++	ctemp08 = *(aoffset2 +  3);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++	*(boffset +  2) = ctemp03;
++	*(boffset +  3) = ctemp04;
++	*(boffset +  4) = ctemp05;
++	*(boffset +  5) = ctemp06;
++	*(boffset +  6) = ctemp07;
++	*(boffset +  7) = ctemp08;
++
++	aoffset1 +=  2 * lda;
++	aoffset2 +=  2 * lda;
++	boffset   += 8;
++
++	i --;
++      }while(i > 0);
++    }
++
++    if (m & 1){
++      ctemp01 = *(aoffset1 +  0);
++      ctemp02 = *(aoffset1 +  1);
++      ctemp03 = *(aoffset1 +  2);
++      ctemp04 = *(aoffset1 +  3);
++
++      *(boffset +  0) = ctemp01;
++      *(boffset +  1) = ctemp02;
++      *(boffset +  2) = ctemp03;
++      *(boffset +  3) = ctemp04;
++
++      boffset   += 4;
++    }
++  }
++
++  if (n & 2){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset + lda;
++    aoffset += 2;
++
++    i = (m >> 1);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset1 +  1);
++	ctemp03 = *(aoffset2 +  0);
++	ctemp04 = *(aoffset2 +  1);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++	*(boffset +  2) = ctemp03;
++	*(boffset +  3) = ctemp04;
++
++	aoffset1 +=  2 * lda;
++	aoffset2 +=  2 * lda;
++	boffset   += 4;
++
++	i --;
++      }while(i > 0);
++    }
++
++    if (m & 1){
++      ctemp01 = *(aoffset1 +  0);
++      ctemp02 = *(aoffset1 +  1);
++
++      *(boffset +  0) = ctemp01;
++      *(boffset +  1) = ctemp02;
++      boffset   += 2;
++    }
++  }
++
++  if (n & 1){
++    aoffset1  = aoffset;
++    aoffset2  = aoffset + lda;
++
++    i = (m >> 1);
++    if (i > 0){
++      do{
++	ctemp01 = *(aoffset1 +  0);
++	ctemp02 = *(aoffset2 +  0);
++
++	*(boffset +  0) = ctemp01;
++	*(boffset +  1) = ctemp02;
++
++	aoffset1 +=  2 * lda;
++	aoffset2 +=  2 * lda;
++	boffset   += 2;
++
++	i --;
++      }while(i > 0);
++    }
++
++    if (m & 1){
++      ctemp01 = *(aoffset1 +  0);
++      *(boffset +  0) = ctemp01;
++      // boffset   += 1;
++    }
++  }
++
++  return 0;
++}
