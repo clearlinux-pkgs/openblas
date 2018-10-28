@@ -10,7 +10,7 @@ License  : BSD-3-Clause
 Patch1: lto.patch
 Patch2: noyield.patch
 Patch3: generic-beta.patch
-Patch4: avx512-gemm.patch
+Patch4: blasupdate.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -33,7 +33,7 @@ OpenBLAS is an optimized linear algebra library.
 %prep
 %setup -q -n OpenBLAS-%{version}
 %patch1 -p1
-%patch2 -p1
+#%patch2 -p1
 %patch3 -p1
 %patch4 -p1
 
@@ -52,14 +52,14 @@ pushd ..
 	cp -a OpenBLAS-%{version} openblas-avx512
 
 	pushd openblas-noavx
-	make TARGET=NEHALEM F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NO_AFFINITY=1 NUM_THREADS=256 %{?_smp_mflags} 
+	make TARGET=NEHALEM F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NO_AFFINITY=1 NUM_THREADS=64 %{?_smp_mflags} 
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	export FFLAGS="$FFLAGS -mavx2 -O3 "
 	pushd openblas-avx2
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=0 NO_AFFINITY=1  NUM_THREADS=256 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=0 NO_AFFINITY=1  NUM_THREADS=64 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 
 	export CFLAGS="$CFLAGS -march=skylake-avx512 "
@@ -67,7 +67,7 @@ pushd ..
 	pushd openblas-avx512
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=0 NO_AFFINITY=1  NUM_THREADS=256 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=64 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 popd
 
