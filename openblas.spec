@@ -54,16 +54,17 @@ pushd ..
 	pushd openblas-noavx
 	make TARGET=NEHALEM F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NO_AFFINITY=1 NUM_THREADS=64 %{?_smp_mflags} 
 	popd
-	export CFLAGS="$CFLAGS -march=haswell "
-	export FFLAGS="$FFLAGS -mavx2 -O3 "
+
+	export CFLAGS="$CFLAGS -march=haswell"
+	export FFLAGS="$FFLAGS -march=haswell"
 	pushd openblas-avx2
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
 	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=0 NO_AFFINITY=1  NUM_THREADS=64 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 
-	export CFLAGS="$CFLAGS -march=skylake-avx512 "
-	export FFLAGS="$FFLAGS -mavx2 -O3 -mavx512vl -march=skylake-avx512"
+	export CFLAGS="$CFLAGS -march=skylake-avx512"
+	export FFLAGS="$FFLAGS -march=skylake-avx512"
 	pushd openblas-avx512
 	# Claim cross compiling to skip tests if we don't have AVX512
 	# (AVX512VL so we run on SKX, but not KNL)
