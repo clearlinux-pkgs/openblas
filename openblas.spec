@@ -65,8 +65,9 @@ pushd ..
 	export CFLAGS="$CFLAGS -march=skylake-avx512 "
 	export FFLAGS="$FFLAGS -mavx2 -O3 -mavx512vl -march=skylake-avx512"
 	pushd openblas-avx512
-	# Claim cross compiling to skip tests if we don't have AVX2
-	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
+	# Claim cross compiling to skip tests if we don't have AVX512
+	# (AVX512VL so we run on SKX, but not KNL)
+	grep -q '^flags .*avx512vl' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
 	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=64 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 popd
