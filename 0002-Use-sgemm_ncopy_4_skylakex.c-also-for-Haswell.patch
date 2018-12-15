@@ -1,0 +1,44 @@
+From 2aae66bec4a1b7701cf00fa5dc1cc3fd224dcfd7 Mon Sep 17 00:00:00 2001
+From: Arjan van de Ven <arjan@linux.intel.com>
+Date: Sat, 15 Dec 2018 13:43:07 +0000
+Subject: [PATCH 2/2] Use sgemm_ncopy_4_skylakex.c also for Haswell
+
+sgemm_ncopy_4_skylakex.c uses SSE transpose operations where the
+real perf win happens; this also works great for Haswell.
+
+This gives double digit percentage gains on small and skinny matrices
+---
+ kernel/x86_64/KERNEL.HASWELL           | 2 +-
+ kernel/x86_64/sgemm_ncopy_4_skylakex.c | 3 +--
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/x86_64/KERNEL.HASWELL b/kernel/x86_64/KERNEL.HASWELL
+index 2aec6006..422e6c31 100644
+--- a/kernel/x86_64/KERNEL.HASWELL
++++ b/kernel/x86_64/KERNEL.HASWELL
+@@ -36,7 +36,7 @@ SGEMMKERNEL    =  sgemm_kernel_16x4_haswell.S
+ SGEMM_BETA     =  sgemm_beta_skylakex.c
+ SGEMMINCOPY    =  ../generic/gemm_ncopy_16.c
+ SGEMMITCOPY    =  ../generic/gemm_tcopy_16.c
+-SGEMMONCOPY    =  ../generic/gemm_ncopy_4.c
++SGEMMONCOPY    =  sgemm_ncopy_4_skylakex.c
+ SGEMMOTCOPY    =  ../generic/gemm_tcopy_4.c
+ SGEMMINCOPYOBJ =  sgemm_incopy$(TSUFFIX).$(SUFFIX)
+ SGEMMITCOPYOBJ =  sgemm_itcopy$(TSUFFIX).$(SUFFIX)
+diff --git a/kernel/x86_64/sgemm_ncopy_4_skylakex.c b/kernel/x86_64/sgemm_ncopy_4_skylakex.c
+index 8577e3b3..6b2b0f5b 100644
+--- a/kernel/x86_64/sgemm_ncopy_4_skylakex.c
++++ b/kernel/x86_64/sgemm_ncopy_4_skylakex.c
+@@ -49,8 +49,7 @@ int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __
+   FLOAT *b_offset;
+   FLOAT  ctemp1,  ctemp2,  ctemp3,  ctemp4;
+   FLOAT  ctemp5,  ctemp6,  ctemp7,  ctemp8;
+-  FLOAT  ctemp9, ctemp10, ctemp11, ctemp12;
+-  FLOAT ctemp13, ctemp14, ctemp15, ctemp16;
++  FLOAT  ctemp9,  ctemp13;
+ 
+   a_offset = a;
+   b_offset = b;
+-- 
+2.20.0
+

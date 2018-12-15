@@ -11,6 +11,8 @@ Patch1: lto.patch
 Patch2: noyield.patch
 Patch3: generic-beta.patch
 Patch4: smallsgemm.patch
+Patch5: 0001-Use-the-skylake-sgemm-beta-code-also-for-haswell.patch
+Patch6: 0002-Use-sgemm_ncopy_4_skylakex.c-also-for-Haswell.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -36,6 +38,8 @@ OpenBLAS is an optimized linear algebra library.
 #%patch2 -p1
 %patch3 -p1
 %patch4 -p1
+%patch5 -p1
+%patch6 -p1
 
 %build
 export AR=gcc-ar

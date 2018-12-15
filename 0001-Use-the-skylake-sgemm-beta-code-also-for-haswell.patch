@@ -1,0 +1,64 @@
+From f3fdcad98bfb9a1ee09b7925546f07c03c66a470 Mon Sep 17 00:00:00 2001
+From: Arjan van de Ven <arjan@linux.intel.com>
+Date: Sat, 15 Dec 2018 13:18:59 +0000
+Subject: [PATCH 1/2] Use the skylake sgemm beta code also for haswell
+
+with a few small changes it's possible to use the skylake sgemm code
+also for haswell, this gives a modest gain (10% range) for smallish
+matrixes but does wonders for very skinny matrixes
+---
+ kernel/x86_64/KERNEL.HASWELL        |  1 +
+ kernel/x86_64/sgemm_beta_skylakex.c | 15 +++++++++++----
+ 2 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/x86_64/KERNEL.HASWELL b/kernel/x86_64/KERNEL.HASWELL
+index 848de38d..2aec6006 100644
+--- a/kernel/x86_64/KERNEL.HASWELL
++++ b/kernel/x86_64/KERNEL.HASWELL
+@@ -33,6 +33,7 @@ ZAXPYKERNEL = zaxpy.c
+ 
+ STRMMKERNEL    =  sgemm_kernel_16x4_haswell.S
+ SGEMMKERNEL    =  sgemm_kernel_16x4_haswell.S
++SGEMM_BETA     =  sgemm_beta_skylakex.c
+ SGEMMINCOPY    =  ../generic/gemm_ncopy_16.c
+ SGEMMITCOPY    =  ../generic/gemm_tcopy_16.c
+ SGEMMONCOPY    =  ../generic/gemm_ncopy_4.c
+diff --git a/kernel/x86_64/sgemm_beta_skylakex.c b/kernel/x86_64/sgemm_beta_skylakex.c
+index 498c46f0..e8653112 100644
+--- a/kernel/x86_64/sgemm_beta_skylakex.c
++++ b/kernel/x86_64/sgemm_beta_skylakex.c
+@@ -61,11 +61,11 @@ int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
+   c_offset = c;
+ 
+   if (beta == ZERO){
+-    __m512 z_zero;
+-    __m256 y_zero;
++#ifdef __AVX512CD__
++    __m512 z_zero = _mm512_setzero_ps();
++#endif
++    __m256 y_zero = _mm256_setzero_ps();
+ 
+-    z_zero = _mm512_setzero_ps();
+-    y_zero = _mm256_setzero_ps();
+     j = n;
+     do {
+       c_offset1 = c_offset;
+@@ -74,8 +74,15 @@ int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
+       i = m;
+ 
+       while (i >= 32) {
++#ifdef __AVX512CD__
+ 	  _mm512_storeu_ps(c_offset1, z_zero);
+ 	  _mm512_storeu_ps(c_offset1 + 16, z_zero);
++#else
++	  _mm256_storeu_ps(c_offset1, y_zero);
++	  _mm256_storeu_ps(c_offset1 + 8, y_zero);
++	  _mm256_storeu_ps(c_offset1 + 16, y_zero);
++	  _mm256_storeu_ps(c_offset1 + 24, y_zero);
++#endif
+ 	  c_offset1 += 32;
+ 	  i -= 32;
+       }
+-- 
+2.20.0
+
