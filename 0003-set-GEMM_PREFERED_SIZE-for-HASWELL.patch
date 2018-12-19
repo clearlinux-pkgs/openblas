@@ -1,0 +1,26 @@
+From 2d498583c9dc47aed2b4a61d78ae4c7f1d3ddbc5 Mon Sep 17 00:00:00 2001
+From: Arjan van de Ven <arjan@linux.intel.com>
+Date: Sun, 16 Dec 2018 23:08:31 +0000
+Subject: [PATCH 3/3] set GEMM_PREFERED_SIZE for HASWELL
+
+Haswell likes a GEMM_PREFERED_SIZE of 16 to improve the split that the
+threading code does to make it a nice multiple of the SIMD kernel size
+---
+ param.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/param.h b/param.h
+index 7a18d82d..fa673020 100644
+--- a/param.h
++++ b/param.h
+@@ -1508,6 +1508,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #define SYMV_P  8
+ 
+ #define SWITCH_RATIO	32
++#define GEMM_PREFERED_SIZE	16
+ 
+ #ifdef ARCH_X86
+ 
+-- 
+2.20.0
+

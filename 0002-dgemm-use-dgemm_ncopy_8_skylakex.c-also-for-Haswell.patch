@@ -1,0 +1,27 @@
+From 58bbf5c20be00139d7f6305aa2e895f1b46c5980 Mon Sep 17 00:00:00 2001
+From: Arjan van de Ven <arjan@linux.intel.com>
+Date: Sun, 16 Dec 2018 23:06:58 +0000
+Subject: [PATCH 2/3] dgemm: use dgemm_ncopy_8_skylakex.c also for Haswell
+
+The dgemm_ncopy_8_skylakex.c code is not avx512 specific and gives
+a nice performance boost for medium sized matrices
+---
+ kernel/x86_64/KERNEL.HASWELL | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/x86_64/KERNEL.HASWELL b/kernel/x86_64/KERNEL.HASWELL
+index 4cd67a70..f98728a4 100644
+--- a/kernel/x86_64/KERNEL.HASWELL
++++ b/kernel/x86_64/KERNEL.HASWELL
+@@ -48,7 +48,7 @@ DGEMMKERNEL    =  dgemm_kernel_4x8_haswell.S
+ DGEMM_BETA     =  dgemm_beta_skylakex.c
+ DGEMMINCOPY    =  ../generic/gemm_ncopy_4.c
+ DGEMMITCOPY    =  ../generic/gemm_tcopy_4.c
+-DGEMMONCOPY    =  ../generic/gemm_ncopy_8.c
++DGEMMONCOPY    =  dgemm_ncopy_8_skylakex.c
+ DGEMMOTCOPY    =  ../generic/gemm_tcopy_8.c
+ DGEMMINCOPYOBJ =  dgemm_incopy$(TSUFFIX).$(SUFFIX)
+ DGEMMITCOPYOBJ =  dgemm_itcopy$(TSUFFIX).$(SUFFIX)
+-- 
+2.20.0
+
