@@ -1,0 +1,1260 @@
+diff --git a/Makefile.arm64 b/Makefile.arm64
+index a529fab8..cd16dbfa 100644
+--- a/Makefile.arm64
++++ b/Makefile.arm64
+@@ -30,8 +30,8 @@ FCOMMON_OPT += -march=armv8-a -mtune=thunderx
+ endif
+ 
+ ifeq ($(CORE), FALKOR)
+-CCOMMON_OPT += -march=armv8.1-a -mtune=falkor
+-FCOMMON_OPT += -march=armv8.1-a -mtune=falkor
++CCOMMON_OPT += -march=armv8-a -mtune=falkor
++FCOMMON_OPT += -march=armv8-a -mtune=falkor
+ endif
+ 
+ ifeq ($(CORE), THUNDERX2T99)
+diff --git a/Makefile.system b/Makefile.system
+index 22fe2433..fb8e7ea4 100644
+--- a/Makefile.system
++++ b/Makefile.system
+@@ -12,6 +12,12 @@ endif
+ # Catch conflicting usage of ARCH in some BSD environments
+ ifeq ($(ARCH), amd64)
+ override ARCH=x86_64
++else ifeq ($(ARCH), powerpc64)
++override ARCH=power
++else ifeq ($(ARCH), i386)
++override ARCH=x86
++else ifeq ($(ARCH), aarch64)
++override ARCH=arm64
+ endif
+ 
+ NETLIB_LAPACK_DIR = $(TOPDIR)/lapack-netlib
+@@ -1148,8 +1154,6 @@ ifndef FCOMMON_OPT
+ FCOMMON_OPT = -O2 -frecursive
+ endif
+ 
+-
+-
+ override CFLAGS     += $(COMMON_OPT) $(CCOMMON_OPT) -I$(TOPDIR)
+ override PFLAGS     += $(COMMON_OPT) $(CCOMMON_OPT) -I$(TOPDIR) -DPROFILE $(COMMON_PROF)
+ 
+@@ -1157,6 +1161,12 @@ override FFLAGS     += $(COMMON_OPT) $(FCOMMON_OPT)
+ override FPFLAGS    += $(FCOMMON_OPT) $(COMMON_PROF)
+ #MAKEOVERRIDES =
+ 
++ifdef NEED_PIC
++ifeq (,$(findstring PIC,$(FFLAGS)))
++override FFLAGS += -fPIC
++endif
++endif
++
+ #For LAPACK Fortran codes.
+ #Disable -fopenmp for LAPACK Fortran codes on Windows.
+ ifdef OS_WINDOWS
+diff --git a/Makefile.x86_64 b/Makefile.x86_64
+index f2647fb7..1b7fe3ef 100644
+--- a/Makefile.x86_64
++++ b/Makefile.x86_64
+@@ -9,6 +9,7 @@ endif
+ endif
+ 
+ ifeq ($(CORE), SKYLAKEX)
++ifndef DYNAMIC_ARCH
+ ifndef NO_AVX512
+ CCOMMON_OPT += -march=skylake-avx512
+ FCOMMON_OPT += -march=skylake-avx512
+@@ -22,6 +23,18 @@ endif
+ endif
+ endif
+ endif
++endif
++
++ifeq ($(CORE), HASWELL)
++ifndef DYNAMIC_ARCH
++ifndef NO_AVX2
++CCOMMON_OPT += -mavx2
++FCOMMON_OPT += -mavx2
++endif
++endif
++endif
++
++
+ 
+ ifeq ($(OSNAME), Interix)
+ ARFLAGS		= -m x64
+diff --git a/cmake/arch.cmake b/cmake/arch.cmake
+index 52fb64ea..63fb86fa 100644
+--- a/cmake/arch.cmake
++++ b/cmake/arch.cmake
+@@ -44,6 +44,10 @@ endif ()
+ 
+ 
+ if (DYNAMIC_ARCH)
++  if (ARM64)
++    set(DYNAMIC_CORE ARMV8 CORTEXA53 CORTEXA57 CORTEXA72 CORTEXA73 FALKOR THUNDERX THUNDERX2T99)
++  endif ()
++  
+   if (X86)
+     set(DYNAMIC_CORE KATMAI COPPERMINE NORTHWOOD PRESCOTT BANIAS CORE2 PENRYN DUNNINGTON NEHALEM ATHLON OPTERON OPTERON_SSE3 BARCELONA BOBCAT ATOM NANO)
+   endif ()
+diff --git a/cmake/prebuild.cmake b/cmake/prebuild.cmake
+index f29bc3a7..6ed99e80 100644
+--- a/cmake/prebuild.cmake
++++ b/cmake/prebuild.cmake
+@@ -116,10 +116,37 @@ if (DEFINED CORE AND CMAKE_CROSSCOMPILING AND NOT (${HOST_OS} STREQUAL "WINDOWSS
+       "#define L2_LINESIZE\t64\n"
+       "#define DTB_DEFAULT_ENTRIES\t64\n"
+       "#define DTB_SIZE\t4096\n"
+-      "#define L2_ASSOCIATIVE\t32\n")
++      "#define L2_ASSOCIATIVE\t32\n"
++      "#define ARMV8\n")
+     set(SGEMM_UNROLL_M 4)
+     set(SGEMM_UNROLL_N 4)
+-  elseif ("${CORE}" STREQUAL "CORTEXA57")
++  elseif ("${CORE}" STREQUAL "CORTEXA57" OR "${CORE}" STREQUAL "CORTEXA53")
++    file(APPEND ${TARGET_CONF_TEMP}
++      "#define L1_CODE_SIZE\t32768\n"
++      "#define L1_CODE_LINESIZE\t64\n"
++      "#define L1_CODE_ASSOCIATIVE\t3\n"
++      "#define L1_DATA_SIZE\t32768\n"
++      "#define L1_DATA_LINESIZE\t64\n"
++      "#define L1_DATA_ASSOCIATIVE\t2\n"
++      "#define L2_SIZE\t262144\n"
++      "#define L2_LINESIZE\t64\n"
++      "#define L2_ASSOCIATIVE\t16\n"
++      "#define DTB_DEFAULT_ENTRIES\t64\n"
++      "#define DTB_SIZE\t4096\n"
++      "#define HAVE_VFPV4\n"
++      "#define HAVE_VFPV3\n"
++      "#define HAVE_VFP\n"
++      "#define HAVE_NEON\n"
++      "#define ARMV8\n")
++    set(SGEMM_UNROLL_M 16)
++    set(SGEMM_UNROLL_N 4)
++    set(DGEMM_UNROLL_M 8)
++    set(DGEMM_UNROLL_N 4)
++    set(CGEMM_UNROLL_M 8)
++    set(CGEMM_UNROLL_N 4)
++    set(ZGEMM_UNROLL_M 8)
++    set(ZGEMM_UNROLL_N 4)
++  elseif ("${CORE}" STREQUAL "CORTEXA72" OR "${CORE}" STREQUAL "CORTEXA73")
+     file(APPEND ${TARGET_CONF_TEMP}
+       "#define L1_CODE_SIZE\t49152\n"
+       "#define L1_CODE_LINESIZE\t64\n"
+@@ -127,7 +154,33 @@ if (DEFINED CORE AND CMAKE_CROSSCOMPILING AND NOT (${HOST_OS} STREQUAL "WINDOWSS
+       "#define L1_DATA_SIZE\t32768\n"
+       "#define L1_DATA_LINESIZE\t64\n"
+       "#define L1_DATA_ASSOCIATIVE\t2\n"
+-      "#define L2_SIZE\t2097152\n"
++      "#define L2_SIZE\t524288\n"
++      "#define L2_LINESIZE\t64\n"
++      "#define L2_ASSOCIATIVE\t16\n"
++      "#define DTB_DEFAULT_ENTRIES\t64\n"
++      "#define DTB_SIZE\t4096\n"
++      "#define HAVE_VFPV4\n"
++      "#define HAVE_VFPV3\n"
++      "#define HAVE_VFP\n"
++      "#define HAVE_NEON\n"
++      "#define ARMV8\n")
++    set(SGEMM_UNROLL_M 16)
++    set(SGEMM_UNROLL_N 4)
++    set(DGEMM_UNROLL_M 8)
++    set(DGEMM_UNROLL_N 4)
++    set(CGEMM_UNROLL_M 8)
++    set(CGEMM_UNROLL_N 4)
++    set(ZGEMM_UNROLL_M 8)
++    set(ZGEMM_UNROLL_N 4)
++  elseif ("${CORE}" STREQUAL "FALKOR")
++    file(APPEND ${TARGET_CONF_TEMP}
++      "#define L1_CODE_SIZE\t65536\n"
++      "#define L1_CODE_LINESIZE\t64\n"
++      "#define L1_CODE_ASSOCIATIVE\t3\n"
++      "#define L1_DATA_SIZE\t32768\n"
++      "#define L1_DATA_LINESIZE\t128\n"
++      "#define L1_DATA_ASSOCIATIVE\t2\n"
++      "#define L2_SIZE\t524288\n"
+       "#define L2_LINESIZE\t64\n"
+       "#define L2_ASSOCIATIVE\t16\n"
+       "#define DTB_DEFAULT_ENTRIES\t64\n"
+@@ -135,7 +188,8 @@ if (DEFINED CORE AND CMAKE_CROSSCOMPILING AND NOT (${HOST_OS} STREQUAL "WINDOWSS
+       "#define HAVE_VFPV4\n"
+       "#define HAVE_VFPV3\n"
+       "#define HAVE_VFP\n"
+-      "#define HAVE_NEON\n")
++      "#define HAVE_NEON\n"
++      "#define ARMV8\n")
+     set(SGEMM_UNROLL_M 16)
+     set(SGEMM_UNROLL_N 4)
+     set(DGEMM_UNROLL_M 8)
+@@ -144,6 +198,57 @@ if (DEFINED CORE AND CMAKE_CROSSCOMPILING AND NOT (${HOST_OS} STREQUAL "WINDOWSS
+     set(CGEMM_UNROLL_N 4)
+     set(ZGEMM_UNROLL_M 8)
+     set(ZGEMM_UNROLL_N 4)
++  elseif ("${CORE}" STREQUAL "THUNDERX)
++    file(APPEND ${TARGET_CONF_TEMP}
++      "#define L1_CODE_SIZE\t32768\n"
++      "#define L1_CODE_LINESIZE\t64\n"
++      "#define L1_CODE_ASSOCIATIVE\t3\n"
++      "#define L1_DATA_SIZE\t32768\n"
++      "#define L1_DATA_LINESIZE\t128\n"
++      "#define L1_DATA_ASSOCIATIVE\t2\n"
++      "#define L2_SIZE\t167772164\n"
++      "#define L2_LINESIZE\t128\n"
++      "#define L2_ASSOCIATIVE\t16\n"
++      "#define DTB_DEFAULT_ENTRIES\t64\n"
++      "#define DTB_SIZE\t4096\n"
++      "#define HAVE_VFPV4\n"
++      "#define HAVE_VFPV3\n"
++      "#define HAVE_VFP\n"
++      "#define HAVE_NEON\n"
++      "#define ARMV8\n")
++    set(SGEMM_UNROLL_M 4)
++    set(SGEMM_UNROLL_N 4)
++    set(DGEMM_UNROLL_M 2)
++    set(DGEMM_UNROLL_N 2)
++    set(CGEMM_UNROLL_M 2)
++    set(CGEMM_UNROLL_N 2)
++    set(ZGEMM_UNROLL_M 2)
++    set(ZGEMM_UNROLL_N 2)
++  elseif ("${CORE}" STREQUAL "THUNDERX2T99)
++    file(APPEND ${TARGET_CONF_TEMP}
++      "#define L1_CODE_SIZE\t32768\n"
++      "#define L1_CODE_LINESIZE\t64\n"
++      "#define L1_CODE_ASSOCIATIVE\t8\n"
++      "#define L1_DATA_SIZE\t32768\n"
++      "#define L1_DATA_LINESIZE\t64\n"
++      "#define L1_DATA_ASSOCIATIVE\t8\n"
++      "#define L2_SIZE\t262144\n"
++      "#define L2_LINESIZE\t64\n"
++      "#define L2_ASSOCIATIVE\t8\n"
++      "#define L3_SIZE\t33554432\n"
++      "#define L3_LINESIZE\t64\n"
++      "#define L3_ASSOCIATIVE\t32\n"
++      "#define DTB_DEFAULT_ENTRIES\t64\n"
++      "#define DTB_SIZE\t4096\n"
++      "#define VULCAN\n")
++    set(SGEMM_UNROLL_M 16)
++    set(SGEMM_UNROLL_N 4)
++    set(DGEMM_UNROLL_M 8)
++    set(DGEMM_UNROLL_N 4)
++    set(CGEMM_UNROLL_M 8)
++    set(CGEMM_UNROLL_N 4)
++    set(ZGEMM_UNROLL_M 4)
++    set(ZGEMM_UNROLL_N 4)
+   endif()
+ 
+   # Or should this actually be NUM_CORES?
+@@ -163,6 +268,7 @@ if (DEFINED CORE AND CMAKE_CROSSCOMPILING AND NOT (${HOST_OS} STREQUAL "WINDOWSS
+   file(APPEND ${TARGET_CONF_TEMP}
+     "#define GEMM_MULTITHREAD_THRESHOLD\t${GEMM_MULTITHREAD_THRESHOLD}\n")
+   # Move to where gen_config_h would place it
++  file(MAKE_DIRECTORY ${TARGET_CONF_DIR})
+   file(RENAME ${TARGET_CONF_TEMP} "${TARGET_CONF_DIR}/${TARGET_CONF}")  
+ 
+ else(NOT CMAKE_CROSSCOMPILING)
+diff --git a/cmake/system.cmake b/cmake/system.cmake
+index d803bb9e..a060d98c 100644
+--- a/cmake/system.cmake
++++ b/cmake/system.cmake
+@@ -42,9 +42,19 @@ if (DEFINED BINARY AND DEFINED TARGET AND BINARY EQUAL 32)
+ endif ()
+ 
+ if (DEFINED TARGET)
+-if (${TARGET} STREQUAL "SKYLAKEX" AND NOT NO_AVX512)
+-  set (KERNEL_DEFINITIONS "${KERNEL_DEFINITIONS} -march=skylake-avx512")
+-endif()
++  if (${TARGET} STREQUAL "SKYLAKEX" AND NOT NO_AVX512)
++    set (KERNEL_DEFINITIONS "${KERNEL_DEFINITIONS} -march=skylake-avx512")
++  endif()
++  if (${TARGET} STREQUAL "HASWELL" AND NOT NO_AVX2)
++    if (${CMAKE_C_COMPILER_ID} STREQUAL "GNU")
++      execute_process(COMMAND ${CMAKE_C_COMPILER} -dumpversion OUTPUT_VARIABLE GCC_VERSION)
++      if (${GCC_VERSION} VERSION_GREATER 4.7 OR ${GCC_VERSION} VERSION_EQUAL 4.7)
++        set (KERNEL_DEFINITIONS "${KERNEL_DEFINITIONS} -mavx2")
++      endif()
++    elseif (${CMAKE_C_COMPILER_ID} STREQUAL "CLANG")
++      set (KERNEL_DEFINITIONS "${KERNEL_DEFINITIONS} -mavx2")
++    endif()
++  endif()
+ endif()
+ 
+ if (DEFINED TARGET)
+diff --git a/common_level3.h b/common_level3.h
+index 1f5490ba..6fa902be 100644
+--- a/common_level3.h
++++ b/common_level3.h
+@@ -47,6 +47,14 @@ __global__ void cuda_dgemm_kernel(int, int, int, double *, double *, double *);
+ extern "C" {
+ #endif
+ 
++extern void sgemm_kernel_direct(BLASLONG M, BLASLONG N, BLASLONG K,
++	float * A, BLASLONG strideA,
++	float * B, BLASLONG strideB,
++	float * R, BLASLONG strideR);
++
++extern int sgemm_kernel_direct_performant(BLASLONG M, BLASLONG N, BLASLONG K);
++
++
+ int sgemm_beta(BLASLONG, BLASLONG, BLASLONG, float,
+ 	       float  *, BLASLONG, float   *, BLASLONG, float  *, BLASLONG);
+ int dgemm_beta(BLASLONG, BLASLONG, BLASLONG, double,
+diff --git a/cpuid_arm64.c b/cpuid_arm64.c
+index c914fbc2..5077d7b1 100644
+--- a/cpuid_arm64.c
++++ b/cpuid_arm64.c
+@@ -270,7 +270,7 @@ void get_cpuconfig(void)
+ 			break;
+ 
+ 		case CPU_THUNDERX2T99:
+-			printf("#define VULCAN                        \n");
++			printf("#define THUNDERX2T99                  \n");
+ 			printf("#define L1_CODE_SIZE         32768    \n");
+ 			printf("#define L1_CODE_LINESIZE     64       \n");
+ 			printf("#define L1_CODE_ASSOCIATIVE  8        \n");
+diff --git a/cpuid_power.c b/cpuid_power.c
+index 23e98ebb..82a3f4aa 100644
+--- a/cpuid_power.c
++++ b/cpuid_power.c
+@@ -136,7 +136,7 @@ int detect(void){
+   char buffer[512], *p;
+ 
+   p = (char *)NULL;
+-  infile = popen("prtconf|grep 'Processor Type'");
++  infile = popen("prtconf|grep 'Processor Type'", "r");
+   while (fgets(buffer, sizeof(buffer), infile)){
+     if (!strncmp("Pro", buffer, 3)){
+ 	p = strchr(buffer, ':') + 2;
+diff --git a/driver/level3/syrk_thread.c b/driver/level3/syrk_thread.c
+index 5f40853d..b26d363c 100644
+--- a/driver/level3/syrk_thread.c
++++ b/driver/level3/syrk_thread.c
+@@ -48,7 +48,7 @@ int CNAME(int mode, blas_arg_t *arg, BLASLONG *range_m, BLASLONG *range_n, int (
+ 
+   BLASLONG width, i;
+   BLASLONG n_from, n_to;
+-  double dnum, nf, nt, di;
++  double dnum, nf, nt, di, dinum;
+ 
+   int num_cpu;
+   int mask = 0;
+@@ -109,7 +109,11 @@ int CNAME(int mode, blas_arg_t *arg, BLASLONG *range_m, BLASLONG *range_n, int (
+       if (nthreads - num_cpu > 1) {
+ 
+ 	di = (double)i;
+-	width = (BLASLONG)(( sqrt(di * di + dnum) - di + mask)/(mask+1)) * (mask+1);
++	dinum = di * di +dnum;
++	if (dinum <0)
++	  width = (BLASLONG)(( - di + mask)/(mask+1)) * (mask+1);
++	else
++	  width = (BLASLONG)(( sqrt(dinum) - di + mask)/(mask+1)) * (mask+1);
+ 
+ 	if ((width <= 0) || (width > n_to - i)) width = n_to - i;
+ 
+@@ -136,9 +140,7 @@ int CNAME(int mode, blas_arg_t *arg, BLASLONG *range_m, BLASLONG *range_n, int (
+ 
+     nf = (double)(arg -> n - n_from);
+     nt = (double)(arg -> n - n_to);
+-
+     dnum = (nt * nt - nf * nf) / (double)nthreads;
+-
+     num_cpu  = 0;
+ 
+     range[0] = n_from;
+@@ -149,8 +151,11 @@ int CNAME(int mode, blas_arg_t *arg, BLASLONG *range_m, BLASLONG *range_n, int (
+       if (nthreads - num_cpu > 1) {
+ 
+ 	di = (double)(arg -> n - i);
+-	width = ((BLASLONG)((-sqrt(di * di + dnum) + di) + mask)/(mask+1)) * (mask+1);
+-
++	dinum = di * di + dnum;
++	if (dinum<0)
++	  width = ((BLASLONG)(di + mask)/(mask+1)) * (mask+1);
++	else
++	  width = ((BLASLONG)((-sqrt(dinum) + di) + mask)/(mask+1)) * (mask+1);
+ 	if ((width <= 0) || (width > n_to - i)) width = n_to - i;
+ 
+       } else {
+diff --git a/driver/others/CMakeLists.txt b/driver/others/CMakeLists.txt
+index e20b14e7..a07e00b3 100644
+--- a/driver/others/CMakeLists.txt
++++ b/driver/others/CMakeLists.txt
+@@ -47,7 +47,11 @@ GenerateNamedObjects("abs.c" "DOUBLE" "z_abs" 0 "" "" 1)
+ GenerateNamedObjects("openblas_get_config.c;openblas_get_parallel.c" "" "" 0 "" "" 1)
+ 
+ if (DYNAMIC_ARCH)
+-  list(APPEND COMMON_SOURCES dynamic.c)
++  if (ARM64)
++    list(APPEND COMMON_SOURCES dynamic_arm64.c)
++  else ()  
++    list(APPEND COMMON_SOURCES dynamic.c)
++  endif ()  
+ else ()
+   list(APPEND COMMON_SOURCES parameter.c)
+ endif ()
+diff --git a/interface/gemm.c b/interface/gemm.c
+index a3bac598..97e71bc8 100644
+--- a/interface/gemm.c
++++ b/interface/gemm.c
+@@ -271,6 +271,14 @@ void CNAME(enum CBLAS_ORDER order, enum CBLAS_TRANSPOSE TransA, enum CBLAS_TRANS
+ 
+   PRINT_DEBUG_CNAME;
+ 
++#if !defined(COMPLEX) && !defined(DOUBLE) && defined(USE_SGEMM_KERNEL_DIRECT)
++  if (beta == 0 && alpha == 1.0 && order == CblasRowMajor && TransA == CblasNoTrans && TransB == CblasNoTrans && sgemm_kernel_direct_performant(m,n,k)) {
++	sgemm_kernel_direct(m, n, k, a, lda, b, ldb, c, ldc);
++	return;
++  }
++
++#endif
++
+ #ifndef COMPLEX
+   args.alpha = (void *)&alpha;
+   args.beta  = (void *)&beta;
+diff --git a/kernel/CMakeLists.txt b/kernel/CMakeLists.txt
+index 947114eb..2a330df4 100644
+--- a/kernel/CMakeLists.txt
++++ b/kernel/CMakeLists.txt
+@@ -125,10 +125,13 @@ function (build_core TARGET_CORE KDIR TSUFFIX KERNEL_DEFINITIONS)
+       set(USE_TRMM true)
+     endif ()
+ 
+-    foreach (float_type ${FLOAT_TYPES})
++    foreach (float_type SINGLE DOUBLE)
+       string(SUBSTRING ${float_type} 0 1 float_char)
+       GenerateNamedObjects("${KERNELDIR}/${${float_char}GEMMKERNEL}" "" "gemm_kernel" false "" "" false ${float_type})
++    endforeach()
+ 
++    foreach (float_type ${FLOAT_TYPES})
++      string(SUBSTRING ${float_type} 0 1 float_char)
+       if (${float_char}GEMMINCOPY)
+         GenerateNamedObjects("${KERNELDIR}/${${float_char}GEMMINCOPY}" "${float_type}" "${${float_char}GEMMINCOPYOBJ}" false "" "" true ${float_type})
+       endif ()
+diff --git a/kernel/Makefile b/kernel/Makefile
+index 923ffc36..e8122507 100644
+--- a/kernel/Makefile
++++ b/kernel/Makefile
+@@ -5,8 +5,43 @@ endif
+ TOPDIR	= ..
+ include $(TOPDIR)/Makefile.system
+ 
++AVX2OPT = 
++ifeq ($(C_COMPILER), GCC)
++# AVX2 support was added in 4.7.0
++  GCCVERSIONGTEQ4 := $(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 4)
++  GCCMINORVERSIONGTEQ7 := $(shell expr `$(CC) -dumpversion | cut -f2 -d.` \>= 7)
++  ifeq ($(GCCVERSIONGTEQ4)$(GCCMINORVERSIONGTEQ7), 11)
++   AVX2OPT = -mavx2
++  endif
++endif
++ifeq ($(C_COMPILER), CLANG)
++# Any clang posing as gcc 4.2 should be new enough (3.4 or later)
++  GCCVERSIONGTEQ4 := $(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 4)
++  GCCMINORVERSIONGTEQ2 := $(shell expr `$(CC) -dumpversion | cut -f2 -d.` \>= 2)
++  ifeq ($(GCCVERSIONGTEQ4)$(GCCMINORVERSIONGTEQ2), 11)
++   AVX2OPT = -mavx2
++  endif
++endif
++ifdef NO_AVX2
++ AVX2OPT=
++endif
++
+ ifdef TARGET_CORE
+-override CFLAGS += -DBUILD_KERNEL -DTABLE_NAME=gotoblas_$(TARGET_CORE)
++ifeq ($(TARGET_CORE), SKYLAKEX)
++ override CFLAGS += -DBUILD_KERNEL -DTABLE_NAME=gotoblas_$(TARGET_CORE) -march=skylake-avx512
++ ifeq ($(OSNAME), CYGWIN_NT)
++  override CFLAGS += -fno-asynchronous-unwind-tables
++ endif
++ ifeq ($(OSNAME), WINNT)
++  ifeq ($(C_COMPILER), GCC)
++   override CFLAGS += -fno-asynchronous-unwind-tables
++  endif
++ endif
++else ifeq ($(TARGET_CORE), HASWELL)
++ override CFLAGS += -DBUILD_KERNEL -DTABLE_NAME=gotoblas_$(TARGET_CORE) $(AVX2OPT)
++else
++ override CFLAGS += -DBUILD_KERNEL -DTABLE_NAME=gotoblas_$(TARGET_CORE)
++endif
+ BUILD_KERNEL = 1
+ KDIR =
+ TSUFFIX = _$(TARGET_CORE)
+diff --git a/kernel/arm64/KERNEL.ARMV8 b/kernel/arm64/KERNEL.ARMV8
+index 5c70390d..a2a43573 100644
+--- a/kernel/arm64/KERNEL.ARMV8
++++ b/kernel/arm64/KERNEL.ARMV8
+@@ -93,8 +93,8 @@ IZAMAXKERNEL   = izamax.S
+ 
+ ifneq ($(OS_DARWIN)$(CROSS),11)
+ SNRM2KERNEL    = nrm2.S
+-CNRM2KERNEL    = nrm2.S
+-DNRM2KERNEL    = znrm2.S
++DNRM2KERNEL    = nrm2.S
++CNRM2KERNEL    = znrm2.S
+ ZNRM2KERNEL    = znrm2.S
+ endif
+ 
+@@ -104,8 +104,38 @@ CDOTKERNEL     = zdot.S
+ ZDOTKERNEL     = zdot.S
+ DSDOTKERNEL    = dot.S
+ 
+-ifneq ($(OS_DARWIN)$(CROSS),11)
++ifeq ($(OS_DARWIN)$(CROSS),11)
++
++STRMMKERNEL	= ../generic/trmmkernel_2x2.c
++DTRMMKERNEL	= ../generic/trmmkernel_2x2.c
++CTRMMKERNEL	= ../generic/ztrmmkernel_2x2.c
++ZTRMMKERNEL	= ../generic/ztrmmkernel_2x2.c
++
++SGEMMKERNEL    =  ../generic/gemmkernel_2x2.c
++SGEMMONCOPY    =  ../generic/gemm_ncopy_2.c
++SGEMMOTCOPY    =  ../generic/gemm_tcopy_2.c
++SGEMMONCOPYOBJ =  sgemm_oncopy$(TSUFFIX).$(SUFFIX)
++SGEMMOTCOPYOBJ =  sgemm_otcopy$(TSUFFIX).$(SUFFIX)
+ 
++DGEMMKERNEL    =  ../generic/gemmkernel_2x2.c
++DGEMMONCOPY    = ../generic/gemm_ncopy_2.c
++DGEMMOTCOPY    = ../generic/gemm_tcopy_2.c
++DGEMMONCOPYOBJ = dgemm_oncopy$(TSUFFIX).$(SUFFIX)
++DGEMMOTCOPYOBJ = dgemm_otcopy$(TSUFFIX).$(SUFFIX)
++
++CGEMMKERNEL    = ../generic/zgemmkernel_2x2.c
++CGEMMONCOPY    = ../generic/zgemm_ncopy_2.c
++CGEMMOTCOPY    = ../generic/zgemm_tcopy_2.c
++CGEMMONCOPYOBJ =  cgemm_oncopy$(TSUFFIX).$(SUFFIX)
++CGEMMOTCOPYOBJ =  cgemm_otcopy$(TSUFFIX).$(SUFFIX)
++
++ZGEMMKERNEL    = ../generic/zgemmkernel_2x2.c
++ZGEMMONCOPY    = ../generic/zgemm_ncopy_2.c
++ZGEMMOTCOPY    = ../generic/zgemm_tcopy_2.c
++ZGEMMONCOPYOBJ =  zgemm_oncopy$(TSUFFIX).$(SUFFIX)
++ZGEMMOTCOPYOBJ =  zgemm_otcopy$(TSUFFIX).$(SUFFIX)
++
++else
+ SGEMMKERNEL    =  sgemm_kernel_$(SGEMM_UNROLL_M)x$(SGEMM_UNROLL_N).S
+ STRMMKERNEL    =  strmm_kernel_$(SGEMM_UNROLL_M)x$(SGEMM_UNROLL_N).S
+ ifneq ($(SGEMM_UNROLL_M), $(SGEMM_UNROLL_N))
+@@ -173,35 +203,4 @@ ZGEMMOTCOPY    =  ../generic/zgemm_tcopy_$(ZGEMM_UNROLL_N).c
+ ZGEMMONCOPYOBJ =  zgemm_oncopy$(TSUFFIX).$(SUFFIX)
+ ZGEMMOTCOPYOBJ =  zgemm_otcopy$(TSUFFIX).$(SUFFIX)
+ 
+-else
+-
+-STRMMKERNEL	= ../generic/trmmkernel_2x2.c
+-DTRMMKERNEL	= ../generic/trmmkernel_2x2.c
+-CTRMMKERNEL	= ../generic/ztrmmkernel_2x2.c
+-ZTRMMKERNEL	= ../generic/ztrmmkernel_2x2.c
+-
+-SGEMMKERNEL    =  ../generic/gemmkernel_2x2.c
+-SGEMMONCOPY    =  ../generic/gemm_ncopy_2.c
+-SGEMMOTCOPY    =  ../generic/gemm_tcopy_2.c
+-SGEMMONCOPYOBJ =  sgemm_oncopy$(TSUFFIX).$(SUFFIX)
+-SGEMMOTCOPYOBJ =  sgemm_otcopy$(TSUFFIX).$(SUFFIX)
+-
+-DGEMMKERNEL    =  ../generic/gemmkernel_2x2.c
+-DGEMMONCOPY    = ../generic/gemm_ncopy_2.c
+-DGEMMOTCOPY    = ../generic/gemm_tcopy_2.c
+-DGEMMONCOPYOBJ = dgemm_oncopy$(TSUFFIX).$(SUFFIX)
+-DGEMMOTCOPYOBJ = dgemm_otcopy$(TSUFFIX).$(SUFFIX)
+-
+-CGEMMKERNEL    = ../generic/zgemmkernel_2x2.c
+-CGEMMONCOPY    = ../generic/zgemm_ncopy_2.c
+-CGEMMOTCOPY    = ../generic/zgemm_tcopy_2.c
+-CGEMMONCOPYOBJ =  cgemm_oncopy$(TSUFFIX).$(SUFFIX)
+-CGEMMOTCOPYOBJ =  cgemm_otcopy$(TSUFFIX).$(SUFFIX)
+-
+-ZGEMMKERNEL    = ../generic/zgemmkernel_2x2.c
+-ZGEMMONCOPY    = ../generic/zgemm_ncopy_2.c
+-ZGEMMOTCOPY    = ../generic/zgemm_tcopy_2.c
+-ZGEMMONCOPYOBJ =  zgemm_oncopy$(TSUFFIX).$(SUFFIX)
+-ZGEMMOTCOPYOBJ =  zgemm_otcopy$(TSUFFIX).$(SUFFIX)
+-
+ endif
+diff --git a/kernel/x86_64/KERNEL.HASWELL b/kernel/x86_64/KERNEL.HASWELL
+index 848de38d..f98728a4 100644
+--- a/kernel/x86_64/KERNEL.HASWELL
++++ b/kernel/x86_64/KERNEL.HASWELL
+@@ -33,9 +33,10 @@ ZAXPYKERNEL = zaxpy.c
+ 
+ STRMMKERNEL    =  sgemm_kernel_16x4_haswell.S
+ SGEMMKERNEL    =  sgemm_kernel_16x4_haswell.S
++SGEMM_BETA     =  sgemm_beta_skylakex.c
+ SGEMMINCOPY    =  ../generic/gemm_ncopy_16.c
+ SGEMMITCOPY    =  ../generic/gemm_tcopy_16.c
+-SGEMMONCOPY    =  ../generic/gemm_ncopy_4.c
++SGEMMONCOPY    =  sgemm_ncopy_4_skylakex.c
+ SGEMMOTCOPY    =  ../generic/gemm_tcopy_4.c
+ SGEMMINCOPYOBJ =  sgemm_incopy$(TSUFFIX).$(SUFFIX)
+ SGEMMITCOPYOBJ =  sgemm_itcopy$(TSUFFIX).$(SUFFIX)
+@@ -44,9 +45,10 @@ SGEMMOTCOPYOBJ =  sgemm_otcopy$(TSUFFIX).$(SUFFIX)
+ 
+ DTRMMKERNEL    =  dtrmm_kernel_4x8_haswell.c
+ DGEMMKERNEL    =  dgemm_kernel_4x8_haswell.S
++DGEMM_BETA     =  dgemm_beta_skylakex.c
+ DGEMMINCOPY    =  ../generic/gemm_ncopy_4.c
+ DGEMMITCOPY    =  ../generic/gemm_tcopy_4.c
+-DGEMMONCOPY    =  ../generic/gemm_ncopy_8.c
++DGEMMONCOPY    =  dgemm_ncopy_8_skylakex.c
+ DGEMMOTCOPY    =  ../generic/gemm_tcopy_8.c
+ DGEMMINCOPYOBJ =  dgemm_incopy$(TSUFFIX).$(SUFFIX)
+ DGEMMITCOPYOBJ =  dgemm_itcopy$(TSUFFIX).$(SUFFIX)
+diff --git a/kernel/x86_64/dgemm_beta_skylakex.c b/kernel/x86_64/dgemm_beta_skylakex.c
+index 6a824c9b..5cd00192 100644
+--- a/kernel/x86_64/dgemm_beta_skylakex.c
++++ b/kernel/x86_64/dgemm_beta_skylakex.c
+@@ -50,7 +50,7 @@ int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
+   FLOAT ctemp5, ctemp6, ctemp7, ctemp8;
+ 
+   /* fast path.. just zero the whole matrix */
+-  if (m == ldc && (unsigned long)beta == (unsigned long)ZERO) {
++  if (m == ldc && beta == ZERO) {
+ 	memset(c, 0, m * n * sizeof(FLOAT));
+ 	return 0;
+   }
+@@ -61,17 +61,17 @@ int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
+   c_offset = c;
+ 
+   if (beta == ZERO){
+-    __m512d z_zero;
+ 
+-    z_zero = _mm512_setzero_pd();
+     j = n;
+     do {
+       c_offset1 = c_offset;
+       c_offset += ldc;
+ 
+       i = m;
+-
++#ifdef __AVX2__
++#ifdef __AVX512CD__
+       while (i >= 32) {
++	  __m512d z_zero = _mm512_setzero_pd();
+ 	  _mm512_storeu_pd(c_offset1, z_zero);
+ 	  _mm512_storeu_pd(c_offset1 + 8, z_zero);
+ 	  _mm512_storeu_pd(c_offset1 + 16, z_zero);
+@@ -79,12 +79,20 @@ int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
+ 	  c_offset1 += 32;
+ 	  i -= 32;
+       }
++#endif
+       while (i >= 8) {
++#ifdef __AVX512CD__
++	  __m512d z_zero = _mm512_setzero_pd();
+ 	  _mm512_storeu_pd(c_offset1, z_zero);
++#else
++	 __m256d y_zero = _mm256_setzero_pd();
++	 _mm256_storeu_pd(c_offset1, y_zero);
++	 _mm256_storeu_pd(c_offset1 + 4, y_zero);
++#endif
+ 	  c_offset1 += 8;
+ 	  i -= 8;
+       }
+-
++#endif
+       while (i > 0) {
+ 	  *c_offset1 = ZERO;
+ 	  c_offset1 ++;
+diff --git a/kernel/x86_64/dgemm_kernel_4x8_skylakex.c b/kernel/x86_64/dgemm_kernel_4x8_skylakex.c
+index a83ca98f..6257e569 100644
+--- a/kernel/x86_64/dgemm_kernel_4x8_skylakex.c
++++ b/kernel/x86_64/dgemm_kernel_4x8_skylakex.c
+@@ -869,7 +869,7 @@ CNAME(BLASLONG m, BLASLONG n, BLASLONG k, double alpha, double * __restrict__ A,
+ 			"vmovapd %%zmm1, %%zmm27\n"
+ 			"vmovapd %%zmm1, %%zmm28\n"
+ 			"jmp .label24\n"
+-			".align 32\n"
++			".p2align 5\n"
+ 			/* Inner math loop */
+ 			".label24:\n"
+ 			"vmovupd     -128(%[AO]),%%zmm0\n"
+@@ -1037,7 +1037,7 @@ CNAME(BLASLONG m, BLASLONG n, BLASLONG k, double alpha, double * __restrict__ A,
+ 			"vmovapd %%zmm1, %%zmm17\n"
+ 			"vmovapd %%zmm1, %%zmm18\n"
+ 			"jmp .label16\n"
+-			".align 32\n"
++			".p2align 5\n"
+ 			/* Inner math loop */
+ 			".label16:\n"
+ 			"vmovupd     -128(%[AO]),%%zmm0\n"
+@@ -1165,7 +1165,7 @@ CNAME(BLASLONG m, BLASLONG n, BLASLONG k, double alpha, double * __restrict__ A,
+ 			"vmovapd %%zmm1, %%zmm8\n"
+ 			"vbroadcastsd (%[alpha]), %%zmm9\n"
+ 			"jmp .label1\n"
+-			".align 32\n"
++			".p2align 5\n"
+ 			/* Inner math loop */
+ 			".label1:\n"
+ 			"vmovupd     -128(%[AO]),%%zmm0\n"
+diff --git a/kernel/x86_64/sgemm_beta_skylakex.c b/kernel/x86_64/sgemm_beta_skylakex.c
+index 498c46f0..1c29c116 100644
+--- a/kernel/x86_64/sgemm_beta_skylakex.c
++++ b/kernel/x86_64/sgemm_beta_skylakex.c
+@@ -50,7 +50,7 @@ int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
+   FLOAT ctemp5, ctemp6, ctemp7, ctemp8;
+ 
+   /* fast path.. just zero the whole matrix */
+-  if (m == ldc && (unsigned long)beta == (unsigned long)ZERO) {
++  if (m == ldc && beta == ZERO) {
+ 	memset(c, 0, m * n * sizeof(FLOAT));
+ 	return 0;
+   }
+@@ -61,30 +61,36 @@ int CNAME(BLASLONG m, BLASLONG n, BLASLONG dummy1, FLOAT beta,
+   c_offset = c;
+ 
+   if (beta == ZERO){
+-    __m512 z_zero;
+-    __m256 y_zero;
+ 
+-    z_zero = _mm512_setzero_ps();
+-    y_zero = _mm256_setzero_ps();
+     j = n;
+     do {
+       c_offset1 = c_offset;
+       c_offset += ldc;
+ 
+       i = m;
+-
++#ifdef __AVX2__
+       while (i >= 32) {
++#ifdef __AVX512CD__
++	  __m512 z_zero = _mm512_setzero_ps();
+ 	  _mm512_storeu_ps(c_offset1, z_zero);
+ 	  _mm512_storeu_ps(c_offset1 + 16, z_zero);
++#else
++	  __m256 y_zero = _mm256_setzero_ps();
++	  _mm256_storeu_ps(c_offset1, y_zero);
++	  _mm256_storeu_ps(c_offset1 + 8, y_zero);
++	  _mm256_storeu_ps(c_offset1 + 16, y_zero);
++	  _mm256_storeu_ps(c_offset1 + 24, y_zero);
++#endif
+ 	  c_offset1 += 32;
+ 	  i -= 32;
+       }
+       while (i >= 8) {
++	    __m256 y_zero = _mm256_setzero_ps();
+ 	  _mm256_storeu_ps(c_offset1, y_zero);
+ 	  c_offset1 += 8;
+ 	  i -= 8;
+       }
+-
++#endif
+       while (i > 0) {
+ 	  *c_offset1 = ZERO;
+ 	  c_offset1 ++;
+diff --git a/kernel/x86_64/sgemm_kernel_16x4_skylakex.c b/kernel/x86_64/sgemm_kernel_16x4_skylakex.c
+index 10d3d22e..3246e681 100644
+--- a/kernel/x86_64/sgemm_kernel_16x4_skylakex.c
++++ b/kernel/x86_64/sgemm_kernel_16x4_skylakex.c
+@@ -760,7 +760,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *************************************************************************************/
+ 
+ int __attribute__ ((noinline))
+-CNAME(BLASLONG m, BLASLONG n, BLASLONG k, float alpha, float * __restrict__ A, float * __restrict__ B, float * __restrict__ C, BLASLONG ldc)
++CNAME(BLASLONG m, BLASLONG n, BLASLONG k, float alpha, float * __restrict A, float * __restrict B, float * __restrict C, BLASLONG ldc)
+ {
+ 	unsigned long M = m, N = n, K = k;
+ 	if (M == 0)
+@@ -1175,3 +1175,468 @@ CNAME(BLASLONG m, BLASLONG n, BLASLONG k, float alpha, float * __restrict__ A, f
+ 
+ 	return 0;
+ }
++
++
++/*
++ * "Direct sgemm" code. This code operates directly on the inputs and outputs
++ * of the sgemm call, avoiding the copies, memory realignments and threading,
++ * and only supports alpha = 1 and beta = 0.
++ * This is a common case and provides value for relatively small matrixes.
++ * For larger matrixes the "regular" sgemm code is superior, there the cost of
++ * copying/shuffling the B matrix really pays off.
++ */
++
++
++
++#define DECLARE_RESULT_512(N,M) __m512 result##N##M = _mm512_setzero_ps()
++#define BROADCAST_LOAD_A_512(N,M) __m512 Aval##M = _mm512_broadcastss_ps(_mm_load_ss(&A[k  + strideA * (i+M)]))
++#define LOAD_B_512(N,M)  __m512 Bval##N = _mm512_loadu_ps(&B[strideB * k + j + (N*16)])
++#define MATMUL_512(N,M)  result##N##M = _mm512_fmadd_ps(Aval##M, Bval##N , result##N##M)
++#define STORE_512(N,M) _mm512_storeu_ps(&R[(i+M) * strideR + j+(N*16)], result##N##M)
++
++
++#define DECLARE_RESULT_256(N,M) __m256 result##N##M = _mm256_setzero_ps()
++#define BROADCAST_LOAD_A_256(N,M) __m256 Aval##M = _mm256_broadcastss_ps(_mm_load_ss(&A[k  + strideA * (i+M)]))
++#define LOAD_B_256(N,M)  __m256 Bval##N = _mm256_loadu_ps(&B[strideB * k + j + (N*8)])
++#define MATMUL_256(N,M)  result##N##M = _mm256_fmadd_ps(Aval##M, Bval##N , result##N##M)
++#define STORE_256(N,M) _mm256_storeu_ps(&R[(i+M) * strideR + j+(N*8)], result##N##M)
++
++#define DECLARE_RESULT_128(N,M) __m128 result##N##M = _mm_setzero_ps()
++#define BROADCAST_LOAD_A_128(N,M) __m128 Aval##M = _mm_broadcastss_ps(_mm_load_ss(&A[k  + strideA * (i+M)]))
++#define LOAD_B_128(N,M)  __m128 Bval##N = _mm_loadu_ps(&B[strideB * k + j + (N*4)])
++#define MATMUL_128(N,M)  result##N##M = _mm_fmadd_ps(Aval##M, Bval##N , result##N##M)
++#define STORE_128(N,M) _mm_storeu_ps(&R[(i+M) * strideR + j+(N*4)], result##N##M)
++
++#define DECLARE_RESULT_SCALAR(N,M) float result##N##M = 0;
++#define BROADCAST_LOAD_A_SCALAR(N,M) float Aval##M = A[k + strideA * (i + M)];
++#define LOAD_B_SCALAR(N,M)  float Bval##N  = B[k * strideB + j + N];
++#define MATMUL_SCALAR(N,M) result##N##M +=  Aval##M * Bval##N;
++#define STORE_SCALAR(N,M)  R[(i+M) * strideR + j + N] = result##N##M;
++
++int sgemm_kernel_direct_performant(BLASLONG M, BLASLONG N, BLASLONG K)
++{
++	int mnk = M * N * K;
++	/* large matrixes -> not performant */
++	if (mnk >= 28 * 512 * 512)
++		return 0;
++
++	/*
++	 * if the B matrix is not a nice multiple if 4 we get many unaligned accesses,
++	 * and the regular sgemm copy/realignment of data pays off much quicker
++	 */
++	if ((N & 3) != 0 && (mnk >= 8 * 512 * 512))
++		return 0;
++
++#ifdef SMP
++	/* if we can run multithreaded, the threading changes the based threshold */
++	if (mnk > 2 * 350 * 512 && num_cpu_avail(3)> 1)
++		return 0;
++#endif
++
++	return 1;
++}
++
++
++
++void sgemm_kernel_direct (BLASLONG M, BLASLONG N, BLASLONG K, float * __restrict A, BLASLONG strideA, float * __restrict B, BLASLONG strideB , float * __restrict R, BLASLONG strideR)
++{
++	int i, j, k;
++
++        int m4 = M & ~3;
++	int m2 = M & ~1;
++
++	int n64 = N & ~63;
++	int n32 = N & ~31;
++	int n16 = N & ~15;
++	int n8 = N & ~7;
++	int n4 = N & ~3;
++	int n2 = N & ~1;
++
++	i = 0;
++
++	for (i = 0; i < m4; i+=4) {
++
++		for (j = 0; j < n64; j+= 64) {
++			k = 0;
++			DECLARE_RESULT_512(0, 0);    DECLARE_RESULT_512(1, 0);    			DECLARE_RESULT_512(2, 0);    DECLARE_RESULT_512(3, 0);
++			DECLARE_RESULT_512(0, 1);    DECLARE_RESULT_512(1, 1);    			DECLARE_RESULT_512(2, 1);    DECLARE_RESULT_512(3, 1);
++			DECLARE_RESULT_512(0, 2);    DECLARE_RESULT_512(1, 2);    			DECLARE_RESULT_512(2, 2);    DECLARE_RESULT_512(3, 2);
++			DECLARE_RESULT_512(0, 3);    DECLARE_RESULT_512(1, 3);    			DECLARE_RESULT_512(2, 3);    DECLARE_RESULT_512(3, 3);
++
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				BROADCAST_LOAD_A_512(x, 1);
++				BROADCAST_LOAD_A_512(x, 2);
++				BROADCAST_LOAD_A_512(x, 3);
++
++				LOAD_B_512(0, x);		LOAD_B_512(1, x);			LOAD_B_512(2, x);		LOAD_B_512(3, x);
++
++				MATMUL_512(0, 0);		MATMUL_512(1, 0);			MATMUL_512(2, 0);		MATMUL_512(3, 0);
++				MATMUL_512(0, 1);		MATMUL_512(1, 1);			MATMUL_512(2, 1);		MATMUL_512(3, 1);
++				MATMUL_512(0, 2);		MATMUL_512(1, 2);			MATMUL_512(2, 2);		MATMUL_512(3, 2);
++				MATMUL_512(0, 3);		MATMUL_512(1, 3);			MATMUL_512(2, 3);		MATMUL_512(3, 3);
++			}
++			STORE_512(0, 0);		STORE_512(1, 0);			STORE_512(2, 0);		STORE_512(3, 0);
++			STORE_512(0, 1);		STORE_512(1, 1);			STORE_512(2, 1);		STORE_512(3, 1);
++			STORE_512(0, 2);		STORE_512(1, 2);			STORE_512(2, 2);		STORE_512(3, 2);
++			STORE_512(0, 3);		STORE_512(1, 3);			STORE_512(2, 3);		STORE_512(3, 3);
++		}
++
++		for (; j < n32; j+= 32) {
++			DECLARE_RESULT_512(0, 0);    DECLARE_RESULT_512(1, 0);
++			DECLARE_RESULT_512(0, 1);    DECLARE_RESULT_512(1, 1);
++			DECLARE_RESULT_512(0, 2);    DECLARE_RESULT_512(1, 2);
++			DECLARE_RESULT_512(0, 3);    DECLARE_RESULT_512(1, 3);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				BROADCAST_LOAD_A_512(x, 1);
++				BROADCAST_LOAD_A_512(x, 2);
++				BROADCAST_LOAD_A_512(x, 3);
++
++				LOAD_B_512(0, x);		LOAD_B_512(1, x);
++
++				MATMUL_512(0, 0);		MATMUL_512(1, 0);
++				MATMUL_512(0, 1);		MATMUL_512(1, 1);
++				MATMUL_512(0, 2);		MATMUL_512(1, 2);
++				MATMUL_512(0, 3);		MATMUL_512(1, 3);
++			}
++			STORE_512(0, 0);		STORE_512(1, 0);
++			STORE_512(0, 1);		STORE_512(1, 1);
++			STORE_512(0, 2);		STORE_512(1, 2);
++			STORE_512(0, 3);		STORE_512(1, 3);
++		}
++
++		for (; j < n16; j+= 16) {
++			DECLARE_RESULT_512(0, 0);
++			DECLARE_RESULT_512(0, 1);
++			DECLARE_RESULT_512(0, 2);
++			DECLARE_RESULT_512(0, 3);
++
++		 	for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				BROADCAST_LOAD_A_512(x, 1);
++				BROADCAST_LOAD_A_512(x, 2);
++				BROADCAST_LOAD_A_512(x, 3);
++
++				LOAD_B_512(0, x);
++
++				MATMUL_512(0, 0);
++				MATMUL_512(0, 1);
++				MATMUL_512(0, 2);
++				MATMUL_512(0, 3);
++			}
++			STORE_512(0, 0);
++			STORE_512(0, 1);
++			STORE_512(0, 2);
++			STORE_512(0, 3);
++		}
++
++		for (; j < n8; j+= 8) {
++			DECLARE_RESULT_256(0, 0);
++			DECLARE_RESULT_256(0, 1);
++			DECLARE_RESULT_256(0, 2);
++			DECLARE_RESULT_256(0, 3);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_256(x, 0);
++				BROADCAST_LOAD_A_256(x, 1);
++				BROADCAST_LOAD_A_256(x, 2);
++				BROADCAST_LOAD_A_256(x, 3);
++
++				LOAD_B_256(0, x);
++
++				MATMUL_256(0, 0);
++				MATMUL_256(0, 1);
++				MATMUL_256(0, 2);
++				MATMUL_256(0, 3);
++			}
++			STORE_256(0, 0);
++			STORE_256(0, 1);
++			STORE_256(0, 2);
++			STORE_256(0, 3);
++		}
++
++		for (; j < n4; j+= 4) {
++			DECLARE_RESULT_128(0, 0);
++			DECLARE_RESULT_128(0, 1);
++			DECLARE_RESULT_128(0, 2);
++			DECLARE_RESULT_128(0, 3);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_128(x, 0);
++				BROADCAST_LOAD_A_128(x, 1);
++				BROADCAST_LOAD_A_128(x, 2);
++				BROADCAST_LOAD_A_128(x, 3);
++
++				LOAD_B_128(0, x);
++
++				MATMUL_128(0, 0);
++				MATMUL_128(0, 1);
++				MATMUL_128(0, 2);
++				MATMUL_128(0, 3);
++			}
++			STORE_128(0, 0);
++			STORE_128(0, 1);
++			STORE_128(0, 2);
++			STORE_128(0, 3);
++		}
++
++		for (; j < n2; j+= 2) {
++			DECLARE_RESULT_SCALAR(0, 0);	DECLARE_RESULT_SCALAR(1, 0);
++			DECLARE_RESULT_SCALAR(0, 1);	DECLARE_RESULT_SCALAR(1, 1);
++			DECLARE_RESULT_SCALAR(0, 2);	DECLARE_RESULT_SCALAR(1, 2);
++			DECLARE_RESULT_SCALAR(0, 3);	DECLARE_RESULT_SCALAR(1, 3);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_SCALAR(x, 0);
++				BROADCAST_LOAD_A_SCALAR(x, 1);
++				BROADCAST_LOAD_A_SCALAR(x, 2);
++				BROADCAST_LOAD_A_SCALAR(x, 3);
++
++				LOAD_B_SCALAR(0, x);	LOAD_B_SCALAR(1, x);
++
++				MATMUL_SCALAR(0, 0);	MATMUL_SCALAR(1, 0);
++				MATMUL_SCALAR(0, 1);	MATMUL_SCALAR(1, 1);
++				MATMUL_SCALAR(0, 2);	MATMUL_SCALAR(1, 2);
++				MATMUL_SCALAR(0, 3);	MATMUL_SCALAR(1, 3);
++			}
++			STORE_SCALAR(0, 0);	STORE_SCALAR(1, 0);
++			STORE_SCALAR(0, 1);	STORE_SCALAR(1, 1);
++			STORE_SCALAR(0, 2);	STORE_SCALAR(1, 2);
++			STORE_SCALAR(0, 3);	STORE_SCALAR(1, 3);
++		}
++
++		for (; j < N; j++) {
++			DECLARE_RESULT_SCALAR(0, 0)
++			DECLARE_RESULT_SCALAR(0, 1)
++			DECLARE_RESULT_SCALAR(0, 2)
++			DECLARE_RESULT_SCALAR(0, 3)
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_SCALAR(0, 0);
++				BROADCAST_LOAD_A_SCALAR(0, 1);
++				BROADCAST_LOAD_A_SCALAR(0, 2);
++				BROADCAST_LOAD_A_SCALAR(0, 3);
++
++				LOAD_B_SCALAR(0, 0);
++
++				MATMUL_SCALAR(0, 0);
++				MATMUL_SCALAR(0, 1);
++				MATMUL_SCALAR(0, 2);
++				MATMUL_SCALAR(0, 3);
++			}
++			STORE_SCALAR(0, 0);
++			STORE_SCALAR(0, 1);
++			STORE_SCALAR(0, 2);
++			STORE_SCALAR(0, 3);
++		}
++	}
++
++	for (; i < m2; i+=2) {
++		j = 0;
++
++		for (; j < n64; j+= 64) {
++			DECLARE_RESULT_512(0, 0);    DECLARE_RESULT_512(1, 0);    			DECLARE_RESULT_512(2, 0);    DECLARE_RESULT_512(3, 0);
++			DECLARE_RESULT_512(0, 1);    DECLARE_RESULT_512(1, 1);    			DECLARE_RESULT_512(2, 1);    DECLARE_RESULT_512(3, 1);
++
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				BROADCAST_LOAD_A_512(x, 1);
++
++				LOAD_B_512(0, x);		LOAD_B_512(1, x);			LOAD_B_512(2, x);		LOAD_B_512(3, x);
++
++				MATMUL_512(0, 0);		MATMUL_512(1, 0);			MATMUL_512(2, 0);		MATMUL_512(3, 0);
++				MATMUL_512(0, 1);		MATMUL_512(1, 1);			MATMUL_512(2, 1);		MATMUL_512(3, 1);
++			}
++			STORE_512(0, 0);		STORE_512(1, 0);			STORE_512(2, 0);		STORE_512(3, 0);
++			STORE_512(0, 1);		STORE_512(1, 1);			STORE_512(2, 1);		STORE_512(3, 1);
++		}
++
++		for (; j < n32; j+= 32) {
++			DECLARE_RESULT_512(0, 0);    DECLARE_RESULT_512(1, 0);
++			DECLARE_RESULT_512(0, 1);    DECLARE_RESULT_512(1, 1);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				BROADCAST_LOAD_A_512(x, 1);
++
++				LOAD_B_512(0, x);		LOAD_B_512(1, x);
++
++				MATMUL_512(0, 0);		MATMUL_512(1, 0);
++				MATMUL_512(0, 1);		MATMUL_512(1, 1);
++			}
++			STORE_512(0, 0);		STORE_512(1, 0);
++			STORE_512(0, 1);		STORE_512(1, 1);
++		}
++
++
++		for (; j < n16; j+= 16) {
++			DECLARE_RESULT_512(0, 0);
++			DECLARE_RESULT_512(0, 1);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				BROADCAST_LOAD_A_512(x, 1);
++
++				LOAD_B_512(0, x);
++
++				MATMUL_512(0, 0);
++				MATMUL_512(0, 1);
++			}
++			STORE_512(0, 0);
++			STORE_512(0, 1);
++		}
++
++		for (; j < n8; j+= 8) {
++			DECLARE_RESULT_256(0, 0);
++			DECLARE_RESULT_256(0, 1);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_256(x, 0);
++				BROADCAST_LOAD_A_256(x, 1);
++
++				LOAD_B_256(0, x);
++
++				MATMUL_256(0, 0);
++				MATMUL_256(0, 1);
++			}
++			STORE_256(0, 0);
++			STORE_256(0, 1);
++		}
++
++		for (; j < n4; j+= 4) {
++			DECLARE_RESULT_128(0, 0);
++			DECLARE_RESULT_128(0, 1);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_128(x, 0);
++				BROADCAST_LOAD_A_128(x, 1);
++
++				LOAD_B_128(0, x);
++
++				MATMUL_128(0, 0);
++				MATMUL_128(0, 1);
++			}
++			STORE_128(0, 0);
++			STORE_128(0, 1);
++		}
++		for (; j < n2; j+= 2) {
++			DECLARE_RESULT_SCALAR(0, 0);	DECLARE_RESULT_SCALAR(1, 0);
++			DECLARE_RESULT_SCALAR(0, 1);	DECLARE_RESULT_SCALAR(1, 1);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_SCALAR(x, 0);
++				BROADCAST_LOAD_A_SCALAR(x, 1);
++
++				LOAD_B_SCALAR(0, x);	LOAD_B_SCALAR(1, x);
++
++				MATMUL_SCALAR(0, 0);	MATMUL_SCALAR(1, 0);
++				MATMUL_SCALAR(0, 1);	MATMUL_SCALAR(1, 1);
++			}
++			STORE_SCALAR(0, 0);	STORE_SCALAR(1, 0);
++			STORE_SCALAR(0, 1);	STORE_SCALAR(1, 1);
++		}
++
++		for (; j < N; j++) {
++			DECLARE_RESULT_SCALAR(0, 0);
++			DECLARE_RESULT_SCALAR(0, 1);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_SCALAR(0, 0);
++				BROADCAST_LOAD_A_SCALAR(0, 1);
++
++				LOAD_B_SCALAR(0, 0);
++
++				MATMUL_SCALAR(0, 0);
++				MATMUL_SCALAR(0, 1);
++			}
++			STORE_SCALAR(0, 0);
++			STORE_SCALAR(0, 1);
++		}
++	}
++
++	for (; i < M; i+=1) {
++		j = 0;
++		for (; j < n64; j+= 64) {
++			DECLARE_RESULT_512(0, 0);    DECLARE_RESULT_512(1, 0);    			DECLARE_RESULT_512(2, 0);    DECLARE_RESULT_512(3, 0);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				LOAD_B_512(0, x);		LOAD_B_512(1, x);			LOAD_B_512(2, x);		LOAD_B_512(3, x);
++				MATMUL_512(0, 0);		MATMUL_512(1, 0);			MATMUL_512(2, 0);		MATMUL_512(3, 0);
++			}
++			STORE_512(0, 0);		STORE_512(1, 0);			STORE_512(2, 0);		STORE_512(3, 0);
++		}
++		for (; j < n32; j+= 32) {
++			DECLARE_RESULT_512(0, 0);    DECLARE_RESULT_512(1, 0);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++				LOAD_B_512(0, x);		LOAD_B_512(1, x);
++				MATMUL_512(0, 0);		MATMUL_512(1, 0);
++			}
++			STORE_512(0, 0);		STORE_512(1, 0);
++		}
++
++
++		for (; j < n16; j+= 16) {
++			DECLARE_RESULT_512(0, 0);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_512(x, 0);
++
++				LOAD_B_512(0, x);
++
++				MATMUL_512(0, 0);
++			}
++			STORE_512(0, 0);
++		}
++
++		for (; j < n8; j+= 8) {
++			DECLARE_RESULT_256(0, 0);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_256(x, 0);
++				LOAD_B_256(0, x);
++				MATMUL_256(0, 0);
++			}
++			STORE_256(0, 0);
++		}
++
++		for (; j < n4; j+= 4) {
++			DECLARE_RESULT_128(0, 0);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_128(x, 0);
++				LOAD_B_128(0, x);
++				MATMUL_128(0, 0);
++			}
++			STORE_128(0, 0);
++		}
++
++		for (; j < n2; j+= 2) {
++			DECLARE_RESULT_SCALAR(0, 0);	DECLARE_RESULT_SCALAR(1, 0);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_SCALAR(x, 0);
++				LOAD_B_SCALAR(0, 0);	LOAD_B_SCALAR(1, 0);
++				MATMUL_SCALAR(0, 0);	MATMUL_SCALAR(1, 0);
++			}
++			STORE_SCALAR(0, 0);	STORE_SCALAR(1, 0);
++		}
++
++		for (; j < N; j++) {
++			DECLARE_RESULT_SCALAR(0, 0);
++
++			for (k = 0; k < K; k++) {
++				BROADCAST_LOAD_A_SCALAR(0, 0);
++				LOAD_B_SCALAR(0, 0);
++				MATMUL_SCALAR(0, 0);
++			}
++			STORE_SCALAR(0, 0);
++		}
++	}
++}
+\ No newline at end of file
+diff --git a/kernel/x86_64/sgemm_ncopy_4_skylakex.c b/kernel/x86_64/sgemm_ncopy_4_skylakex.c
+index 8577e3b3..6b2b0f5b 100644
+--- a/kernel/x86_64/sgemm_ncopy_4_skylakex.c
++++ b/kernel/x86_64/sgemm_ncopy_4_skylakex.c
+@@ -49,8 +49,7 @@ int CNAME(BLASLONG m, BLASLONG n, FLOAT * __restrict a, BLASLONG lda, FLOAT * __
+   FLOAT *b_offset;
+   FLOAT  ctemp1,  ctemp2,  ctemp3,  ctemp4;
+   FLOAT  ctemp5,  ctemp6,  ctemp7,  ctemp8;
+-  FLOAT  ctemp9, ctemp10, ctemp11, ctemp12;
+-  FLOAT ctemp13, ctemp14, ctemp15, ctemp16;
++  FLOAT  ctemp9,  ctemp13;
+ 
+   a_offset = a;
+   b_offset = b;
+diff --git a/param.h b/param.h
+index 8f56cdaa..fa673020 100644
+--- a/param.h
++++ b/param.h
+@@ -1508,6 +1508,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #define SYMV_P  8
+ 
+ #define SWITCH_RATIO	32
++#define GEMM_PREFERED_SIZE	16
+ 
+ #ifdef ARCH_X86
+ 
+@@ -1628,6 +1629,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #define SWITCH_RATIO	32
+ #define GEMM_PREFERED_SIZE	32
++#define USE_SGEMM_KERNEL_DIRECT 1
+ 
+ #ifdef ARCH_X86
+ 

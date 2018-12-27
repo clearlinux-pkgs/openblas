@@ -8,14 +8,7 @@ Group    : Development/Tools
 License  : BSD-3-Clause
 
 Patch1: lto.patch
-Patch2: noyield.patch
-Patch3: generic-beta.patch
-Patch4: smallsgemm.patch
-Patch5: 0001-Use-the-skylake-sgemm-beta-code-also-for-haswell.patch
-Patch6: 0002-Use-sgemm_ncopy_4_skylakex.c-also-for-Haswell.patch
-Patch7: 0001-dgemm-Use-the-skylakex-beta-function-also-for-haswel.patch
-Patch8: 0002-dgemm-use-dgemm_ncopy_8_skylakex.c-also-for-Haswell.patch
-Patch9: 0003-set-GEMM_PREFERED_SIZE-for-HASWELL.patch
+Patch4: git-snapshot.patch
 Patch10: blas-ht.patch
 Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
 
@@ -40,14 +33,7 @@ OpenBLAS is an optimized linear algebra library.
 %prep
 %setup -q -n OpenBLAS-%{version}
 %patch1 -p1
-#%patch2 -p1
-%patch3 -p1
 %patch4 -p1
-%patch5 -p1
-%patch6 -p1
-%patch7 -p1
-%patch8 -p1
-%patch9 -p1
 %patch10 -p1
 %patch11 -p1
 
