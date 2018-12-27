@@ -1,0 +1,47 @@
+diff --git a/driver/others/memory.c b/driver/others/memory.c
+index 36815a39..6b62b9d8 100644
+--- a/driver/others/memory.c
++++ b/driver/others/memory.c
+@@ -1692,6 +1692,22 @@ void goto_set_num_threads(int num_threads) {};
+ #else
+ 
+ #if defined(OS_LINUX) || defined(OS_SUNOS) || defined(OS_NETBSD)
++static hyperthreading_divider(void)
++{
++       FILE *file;
++       char buffer[16];
++       file = fopen("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list", "r");
++       if (!file)
++               return 1;
++       buffer[0] = 0;
++       buffer[1] = 0;
++       fread(buffer, 1, 3, file);
++       fclose(file);
++       if (buffer[1] == ',')
++               return 2;
++       return 1;
++}
++
+ #ifndef NO_AFFINITY
+ int get_num_procs(void);
+ #else
+@@ -1707,6 +1723,10 @@ int i,n;
+      return nums;
+ #endif
+ 
++#if defined(linux)
++   nums = nums / hyperthreading_divider();
++#endif 
++
+ #if !defined(__GLIBC_PREREQ)
+    return nums;
+ #else
+@@ -1733,6 +1753,8 @@ int i,n;
+   ret = sched_getaffinity(0,size,cpusetp);
+   if (ret!=0) return nums;
+   nums = CPU_COUNT_S(size,cpusetp);
++  if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
++	nums = nums / hyperthreading_divider();
+   CPU_FREE(cpusetp);
+   return nums;
+  #endif

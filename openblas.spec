@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.3.4
-Release  : 91
+Release  : 92
 URL      : http://www.openblas.net/
 Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.4.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -16,6 +16,7 @@ Patch6: 0002-Use-sgemm_ncopy_4_skylakex.c-also-for-Haswell.patch
 Patch7: 0001-dgemm-Use-the-skylakex-beta-function-also-for-haswel.patch
 Patch8: 0002-dgemm-use-dgemm_ncopy_8_skylakex.c-also-for-Haswell.patch
 Patch9: 0003-set-GEMM_PREFERED_SIZE-for-HASWELL.patch
+Patch10: blas-ht.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -46,6 +47,7 @@ OpenBLAS is an optimized linear algebra library.
 %patch7 -p1
 %patch8 -p1
 %patch9 -p1
+%patch10 -p1
 
 %build
 export AR=gcc-ar
@@ -62,7 +64,7 @@ pushd ..
 	cp -a OpenBLAS-%{version} openblas-avx512
 
 	pushd openblas-noavx
-	make TARGET=NEHALEM F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NO_AFFINITY=1 NUM_THREADS=64 %{?_smp_mflags} 
+	make TARGET=NEHALEM F_COMPILER=GFORTRAN SHARED=1 DYNAMIC_THREADS=1 NO_AFFINITY=1 NUM_THREADS=128 %{?_smp_mflags} 
 	popd
 
 	export CFLAGS="$CFLAGS -march=haswell"
@@ -70,7 +72,7 @@ pushd ..
 	pushd openblas-avx2
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=0 NO_AFFINITY=1  NUM_THREADS=64 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=0 NO_AFFINITY=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 
 	export CFLAGS="$CFLAGS -march=skylake-avx512"
@@ -79,7 +81,7 @@ pushd ..
 	# Claim cross compiling to skip tests if we don't have AVX512
 	# (AVX512VL so we run on SKX, but not KNL)
 	grep -q '^flags .*avx512vl' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1  NUM_THREADS=64 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=0 NO_AFFINITY=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 popd
 
