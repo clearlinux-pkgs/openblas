@@ -1,6 +1,6 @@
 Name     : openblas
 Version  : 0.3.4
-Release  : 92
+Release  : 93
 URL      : http://www.openblas.net/
 Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.4.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -17,6 +17,7 @@ Patch7: 0001-dgemm-Use-the-skylakex-beta-function-also-for-haswel.patch
 Patch8: 0002-dgemm-use-dgemm_ncopy_8_skylakex.c-also-for-Haswell.patch
 Patch9: 0003-set-GEMM_PREFERED_SIZE-for-HASWELL.patch
 Patch10: blas-ht.patch
+Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -48,6 +49,7 @@ OpenBLAS is an optimized linear algebra library.
 %patch8 -p1
 %patch9 -p1
 %patch10 -p1
+%patch11 -p1
 
 %build
 export AR=gcc-ar
