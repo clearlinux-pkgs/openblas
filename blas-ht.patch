@@ -45,3 +45,44 @@ index 36815a39..6b62b9d8 100644
    CPU_FREE(cpusetp);
    return nums;
   #endif
+diff --git a/driver/others/blas_server.c b/driver/others/blas_server.c
+index e5db1804..49614036 100644
+--- a/driver/others/blas_server.c
++++ b/driver/others/blas_server.c
+@@ -273,7 +273,6 @@ static void* blas_thread_server(void *arg){
+ 
+   /* Thread identifier */
+   BLASLONG  cpu = (BLASLONG)arg;
+-  unsigned int last_tick;
+   void *buffer, *sa, *sb;
+   blas_queue_t	*queue;
+ 
+@@ -310,16 +309,13 @@ blas_queue_t *tscq;
+     exit_time[cpu] = rpcc();
+ #endif
+ 
+-      last_tick = (unsigned int)rpcc();
+ 
+ 	pthread_mutex_lock  (&thread_status[cpu].lock);
+         tscq=thread_status[cpu].queue;
+ 	pthread_mutex_unlock  (&thread_status[cpu].lock);
+ 
+ 	while(!tscq) {
+-	YIELDING;
+ 
+-	if ((unsigned int)rpcc() - last_tick > thread_timeout) {
+ 
+ 	  pthread_mutex_lock  (&thread_status[cpu].lock);
+ 
+@@ -335,11 +331,6 @@ blas_queue_t *tscq;
+ 	    }
+ 	  }
+ 
+-	  pthread_mutex_unlock(&thread_status[cpu].lock);
+-
+-	  last_tick = (unsigned int)rpcc();
+-	}
+-	pthread_mutex_lock  (&thread_status[cpu].lock);
+         tscq=thread_status[cpu].queue;
+ 	pthread_mutex_unlock  (&thread_status[cpu].lock);
+ 
