@@ -18,6 +18,14 @@ Group: Binaries
 %description staticdev
 files for static linking
 
+%package dev
+Summary: fiiles for dev
+Group: Binaries
+Requires: openblas
+
+%description dev
+files for dev
+
 #
 # Note that this package currently does not have a -dev component.
 # It seems that all users of BLAS stuff expect the whole thing to be there
@@ -111,7 +119,6 @@ popd
 /usr/include/lapacke_mangling.h
 /usr/include/lapacke_utils.h
 /usr/include/openblas_config.h
-/usr/lib64/pkgconfig/openblas.pc
 /usr/lib64/haswell/libopenblas.so
 /usr/lib64/haswell/libopenblas.so.0
 /usr/lib64/haswell/libopenblas_haswellp-r0.3.5.so
@@ -126,8 +133,6 @@ popd
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
 /usr/lib64/libopenblas_nehalemp-r0.3.5.so
-/usr/lib64/cmake/openblas/OpenBLASConfig.cmake
-/usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
 %exclude /usr/lib64/haswell/avx512_1/pkgconfig/openblas.pc
 
 %files staticdev
@@ -138,3 +143,8 @@ popd
 /usr/lib64/libopenblas.a
 /usr/lib64/libopenblas_nehalemp-r0.3.5.a
 
+
+%files dev
+/usr/lib64/pkgconfig/openblas.pc
+/usr/lib64/cmake/openblas/OpenBLASConfig.cmake
+/usr/lib64/cmake/openblas/OpenBLASConfigVersion.cmake
