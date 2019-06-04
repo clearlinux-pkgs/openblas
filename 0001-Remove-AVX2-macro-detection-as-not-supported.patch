@@ -1,0 +1,32 @@
+From 393502d3de1009f262af10846c208a3f7c519e3a Mon Sep 17 00:00:00 2001
+From: Guobing Chen <guobing.chen@intel.com>
+Date: Tue, 4 Jun 2019 11:03:51 +0800
+Subject: [PATCH] Remove AVX2 macro detection as not supported
+
+OpenBLAS v0.3.6 has problem to build SKYLAKEX target by default as
+descipt in https://github.com/xianyi/OpenBLAS/issues/2152.
+
+This is a temp workaround to enable it and after the issue officially
+fixed in future OpenBLAS version we can drop this patch.
+
+Signed-off-by: Guobing Chen <guobing.chen@intel.com>
+---
+ getarch.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/getarch.c b/getarch.c
+index 4d960356..bf7cf404 100644
+--- a/getarch.c
++++ b/getarch.c
+@@ -91,7 +91,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include <unistd.h>
+ #endif
+ 
+-#if (( defined(__GNUC__)  && __GNUC__   > 6 && defined(__AVX2__)) || (defined(__clang__) && __clang_major__ >= 6))
++#if (( defined(__GNUC__)  && __GNUC__   > 6 ) || (defined(__clang__) && __clang_major__ >= 6))
+ #else
+ #define NO_AVX512
+ #endif
+-- 
+2.21.0
+
