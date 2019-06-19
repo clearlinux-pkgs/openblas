@@ -1,0 +1,43 @@
+From b0e7c223058dcde439d5907cdc9009a61f491bff Mon Sep 17 00:00:00 2001
+From: Guobing Chen <guobing.chen@intel.com>
+Date: Wed, 19 Jun 2019 13:39:19 +0800
+Subject: [PATCH] Set OMP thread count to best utilize HT CPU
+
+During openmp mode (with USE_OPENMP=1 when building), openmp threads are used to process inside openblas. while by default openmp will rely on system env OMP_NUM_THREADS to specify how many threads to be used, which is - if not set - the number of total CPUs in system. This is not the best choice when HT on, which should be set with physical CPU numbers to get the best for computation-intensive workloads in parallel like openblas tasks. This patch set related openmp thread count in openblas to get better performance under openmp mode.
+
+Signed-off-by: Guobing Chen <guobing.chen@intel.com>
+---
+ driver/others/memory.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/driver/others/memory.c b/driver/others/memory.c
+index c48918c..69b0c5d 100644
+--- a/driver/others/memory.c
++++ b/driver/others/memory.c
+@@ -1814,6 +1814,11 @@ int get_num_procs(void) {
+     if (ret > 0 && ret < nums) nums = ret;	
+     if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
+         nums = nums / hyperthreading_divider();
++#if defined(USE_OPENMP)
++    if (0 == openblas_omp_num_threads_env()) {
++        omp_set_num_threads(nums);
++    }
++#endif
+     CPU_FREE(cpusetp);
+     return nums;
+   } else {
+@@ -1825,6 +1830,11 @@ int get_num_procs(void) {
+     if (ret > 0 && ret < nums) nums = ret;	
+     if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
+         nums = nums / hyperthreading_divider();
++#if defined(USE_OPENMP)
++    if (0 == openblas_omp_num_threads_env()) {
++        omp_set_num_threads(nums);
++    }
++#endif
+     return nums;
+   }
+  #endif
+-- 
+2.21.0
+
