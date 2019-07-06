@@ -1,0 +1,15 @@
+--- OpenBLAS-0.3.6/kernel/x86_64/KERNEL.SKYLAKEX~	2019-04-29 17:22:19.000000000 +0000
++++ OpenBLAS-0.3.6/kernel/x86_64/KERNEL.SKYLAKEX	2019-07-06 12:31:56.303446558 +0000
+@@ -7,12 +7,5 @@
+ SGEMMONCOPY    =  sgemm_ncopy_4_skylakex.c
+ SGEMMOTCOPY    =  ../generic/gemm_tcopy_4.c
+ 
+-#DGEMMKERNEL    =  dgemm_kernel_4x8_skylakex.c
+-
+-DGEMMINCOPY    =  dgemm_ncopy_8_skylakex.c
+-DGEMMITCOPY    =  dgemm_tcopy_8_skylakex.c
+-DGEMMONCOPY    =  dgemm_ncopy_8_skylakex.c
+-DGEMMOTCOPY    =  dgemm_tcopy_8_skylakex.c
+ 
+ SGEMM_BETA = sgemm_beta_skylakex.c
+-DGEMM_BETA = dgemm_beta_skylakex.c
