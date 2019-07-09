@@ -97,14 +97,26 @@ pushd ..
 
 	pushd openblas-noavx
 	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64
+        ln -sf libopenblas_nehalemp-r0.3.6.so %{buildroot}/usr/lib64/libblas.so
+        ln -sf libopenblas_nehalemp-r0.3.6.so %{buildroot}/usr/lib64/libblas.so.3
+        ln -sf libopenblas_nehalemp-r0.3.6.so %{buildroot}/usr/lib64/liblapack.so
+        ln -sf libopenblas_nehalemp-r0.3.6.so %{buildroot}/usr/lib64/liblapack.so.3
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	pushd openblas-avx2
 	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/haswell
+        ln -sf libopenblas_haswellp-r0.3.6.so %{buildroot}/usr/lib64/haswell/libblas.so
+        ln -sf libopenblas_haswellp-r0.3.6.so %{buildroot}/usr/lib64/haswell/libblas.so.3
+        ln -sf libopenblas_haswellp-r0.3.6.so %{buildroot}/usr/lib64/haswell/liblapack.so
+        ln -sf libopenblas_haswellp-r0.3.6.so %{buildroot}/usr/lib64/haswell/liblapack.so.3
 	popd
 	export CFLAGS="$CFLAGS -march=skylake-avx512 "
 	pushd openblas-avx512
 	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/haswell/avx512_1
+        ln -sf libopenblas_skylakexp-r0.3.6.so %{buildroot}/usr/lib64/haswell/avx512_1/libblas.so
+        ln -sf libopenblas_skylakexp-r0.3.6.so %{buildroot}/usr/lib64/haswell/avx512_1/libblas.so.3
+        ln -sf libopenblas_skylakexp-r0.3.6.so %{buildroot}/usr/lib64/haswell/avx512_1/liblapack.so
+        ln -sf libopenblas_skylakexp-r0.3.6.so %{buildroot}/usr/lib64/haswell/avx512_1/liblapack.so.3
 	popd
 popd
 
@@ -140,6 +152,18 @@ popd
 /usr/lib64/libopenblas.so.0
 /usr/lib64/libopenblas_nehalemp-r0.3.6.so
 %exclude /usr/lib64/haswell/avx512_1/pkgconfig/openblas.pc
+/usr/lib64/haswell/avx512_1/libblas.so
+/usr/lib64/haswell/avx512_1/libblas.so.3
+/usr/lib64/haswell/avx512_1/liblapack.so
+/usr/lib64/haswell/avx512_1/liblapack.so.3
+/usr/lib64/haswell/libblas.so
+/usr/lib64/haswell/libblas.so.3
+/usr/lib64/haswell/liblapack.so
+/usr/lib64/haswell/liblapack.so.3
+/usr/lib64/libblas.so
+/usr/lib64/libblas.so.3
+/usr/lib64/liblapack.so
+/usr/lib64/liblapack.so.3
 
 %files staticdev
 /usr/lib64/haswell/libopenblas.a
