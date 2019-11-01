@@ -13,6 +13,8 @@ Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
 Patch12: 0001-Remove-AVX2-macro-detection-as-not-supported.patch
 Patch13: 0001-Set-OMP-thread-count-to-best-utilize-HT-CPU.patch
 Patch14: no-dgemm-avx512.patch
+Patch15: Fix_dgemm_kernel_4x8_skylakex.patch
+Patch16: 0001-Apply-zdot-change-from-openblas-upstream-dev-branch.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -47,7 +49,9 @@ OpenBLAS is an optimized linear algebra library.
 %patch11 -p1
 %patch12 -p1
 %patch13 -p1
-%patch14 -p1
+#%patch14 -p1
+%patch15 -p1
+%patch16 -p1
 
 %build
 export AR=gcc-ar
