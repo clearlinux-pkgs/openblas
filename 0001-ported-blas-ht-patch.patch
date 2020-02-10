@@ -69,7 +69,7 @@ index f67cb01f..9327917e 100644
 @@ -1737,6 +1737,22 @@ void goto_set_num_threads(int num_threads) {};
  #else
  
- #if defined(OS_LINUX) || defined(OS_SUNOS) || defined(OS_NETBSD)
+ #if defined(OS_LINUX) || defined(OS_SUNOS)
 +static hyperthreading_divider(void)
 +{
 +       FILE *file;

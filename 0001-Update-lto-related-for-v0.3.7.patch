@@ -54,29 +54,17 @@ index 6addbda..9b36a79 100644
  override CFLAGS     += $(COMMON_OPT) $(CCOMMON_OPT) -I$(TOPDIR)
 diff --git a/lapack-netlib/INSTALL/make.inc.gfortran b/lapack-netlib/INSTALL/make.inc.gfortran
 index 39d98d4..afc83b9 100644
---- a/lapack-netlib/INSTALL/make.inc.gfortran
-+++ b/lapack-netlib/INSTALL/make.inc.gfortran
-@@ -20,7 +20,7 @@ CFLAGS = -O3
- #  should not compile LAPACK with flags such as -ffpe-trap=overflow.
- #
- FORTRAN = gfortran
--OPTS    = -O2 -frecursive
-+OPTS    = -O3 -march=westmere -frecursive
- DRVOPTS = $(OPTS)
- NOOPT   = -O0 -frecursive
- 
-@@ -33,9 +33,9 @@ LOADOPTS =
+--- OpenBLAS-0.3.8/lapack-netlib/INSTALL/make.inc.gfortran~	2020-02-09 22:16:28.000000000 +0000
++++ OpenBLAS-0.3.8/lapack-netlib/INSTALL/make.inc.gfortran	2020-02-10 15:53:10.979388033 +0000
+@@ -31,9 +31,9 @@
  #  The archiver and the flag(s) to use when building an archive
  #  (library).  If your system has no ranlib, set RANLIB = echo.
  #
--ARCH      = ar
-+ARCH      = gcc-ar
- ARCHFLAGS = cr
--RANLIB    = ranlib
-+RANLIB    = gcc-ranlib
+-AR = ar
++AR = gcc-ar
+ ARFLAGS = cr
+-RANLIB = ranlib
++RANLIB = gcc-ranlib
  
  #  Timer for the SECOND and DSECND routines
  #
--- 
-2.22.0
-

@@ -1,20 +1,18 @@
 Name     : openblas
-Version  : 0.3.7
+Version  : 0.3.8
 Release  : 109
 URL      : http://www.openblas.net/
-Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.7.tar.gz
+Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.8.tar.gz
 Summary  : The OpenBLAS linear algebra package
 Group    : Development/Tools
 License  : BSD-3-Clause
 
 Patch1:  0001-Update-lto-related-for-v0.3.7.patch
 Patch10: 0001-ported-blas-ht-patch.patch 
-Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
+#Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
 Patch12: 0001-Remove-AVX2-macro-detection-as-not-supported.patch
 Patch13: 0001-Set-OMP-thread-count-to-best-utilize-HT-CPU.patch
 Patch14: no-dgemm-avx512.patch
-Patch15: Fix_dgemm_kernel_4x8_skylakex.patch
-Patch16: 0001-Apply-zdot-change-from-openblas-upstream-dev-branch.patch
 
 %package staticdev
 Summary: fiiles for static linking
@@ -46,12 +44,10 @@ OpenBLAS is an optimized linear algebra library.
 %setup -q -n OpenBLAS-%{version}
 %patch1 -p1
 %patch10 -p1
-%patch11 -p1
+#%patch11 -p1
 %patch12 -p1
 %patch13 -p1
 #%patch14 -p1
-%patch15 -p1
-%patch16 -p1
 
 %build
 export AR=gcc-ar
@@ -141,6 +137,7 @@ popd
 /usr/include/lapacke_mangling.h
 /usr/include/lapacke_utils.h
 /usr/include/openblas_config.h
+/usr/include/lapack.h
 /usr/lib64/haswell/libopenblas.so
 /usr/lib64/haswell/libopenblas.so.0
 /usr/lib64/haswell/libopenblas_haswellp-r%{version}.so
