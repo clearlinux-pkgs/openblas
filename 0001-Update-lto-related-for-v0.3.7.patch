@@ -16,16 +16,16 @@ diff --git a/Makefile.system b/Makefile.system
 index 6addbda..9b36a79 100644
 --- a/Makefile.system
 +++ b/Makefile.system
-@@ -257,10 +257,10 @@ endif
+@@ -263,10 +263,10 @@
  
  ARFLAGS	=
  CPP	= $(COMPILER) -E
--AR	= $(CROSS_SUFFIX)ar
-+AR	= $(CROSS_SUFFIX)gcc-ar
- AS	= $(CROSS_SUFFIX)as
- LD	= $(CROSS_SUFFIX)ld
--RANLIB	= $(CROSS_SUFFIX)ranlib
-+RANLIB	= $(CROSS_SUFFIX)gcc-ranlib
+-AR	?= $(CROSS_SUFFIX)ar
++AR	?= $(CROSS_SUFFIX)gcc-ar
+ AS	?= $(CROSS_SUFFIX)as
+ LD	?= $(CROSS_SUFFIX)ld
+-RANLIB	?= $(CROSS_SUFFIX)ranlib
++RANLIB	?= $(CROSS_SUFFIX)gcc-ranlib
  NM	= $(CROSS_SUFFIX)nm
  DLLWRAP = $(CROSS_SUFFIX)dllwrap
  OBJCOPY = $(CROSS_SUFFIX)objcopy
