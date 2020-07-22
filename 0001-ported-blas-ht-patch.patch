@@ -12,56 +12,6 @@ Signed-off-by: Guobing Chen <guobing.chen@intel.com>
  driver/others/memory.c      | 24 ++++++++++++++++++++++++
  2 files changed, 33 insertions(+), 9 deletions(-)
 
-diff --git a/driver/others/blas_server.c b/driver/others/blas_server.c
-index 6f4e2061..4ada0e9d 100644
---- a/driver/others/blas_server.c
-+++ b/driver/others/blas_server.c
-@@ -273,7 +273,7 @@ static void* blas_thread_server(void *arg){
- 
-   /* Thread identifier */
-   BLASLONG  cpu = (BLASLONG)arg;
--  unsigned int last_tick;
-+//  unsigned int last_tick;
-   void *buffer, *sa, *sb;
-   blas_queue_t	*queue;
- 
-@@ -310,16 +310,16 @@ blas_queue_t *tscq;
-     exit_time[cpu] = rpcc();
- #endif
- 
--      last_tick = (unsigned int)rpcc();
-+//      last_tick = (unsigned int)rpcc();
- 
- 	pthread_mutex_lock  (&thread_status[cpu].lock);
-         tscq=thread_status[cpu].queue;
- 	pthread_mutex_unlock  (&thread_status[cpu].lock);
- 
- 	while(!tscq) {
--	YIELDING;
-+//	YIELDING;
- 
--	if ((unsigned int)rpcc() - last_tick > thread_timeout) {
-+//	if ((unsigned int)rpcc() - last_tick > thread_timeout) {
- 
- 	  pthread_mutex_lock  (&thread_status[cpu].lock);
- 
-@@ -335,11 +335,11 @@ blas_queue_t *tscq;
- 	    }
- 	  }
- 
--	  pthread_mutex_unlock(&thread_status[cpu].lock);
--
--	  last_tick = (unsigned int)rpcc();
--	}
--	pthread_mutex_lock  (&thread_status[cpu].lock);
-+//	  pthread_mutex_unlock(&thread_status[cpu].lock);
-+//
-+//	  last_tick = (unsigned int)rpcc();
-+//	}
-+//	pthread_mutex_lock  (&thread_status[cpu].lock);
-         tscq=thread_status[cpu].queue;
- 	pthread_mutex_unlock  (&thread_status[cpu].lock);
- 
 diff --git a/driver/others/memory.c b/driver/others/memory.c
 index f67cb01f..9327917e 100644
 --- a/driver/others/memory.c
