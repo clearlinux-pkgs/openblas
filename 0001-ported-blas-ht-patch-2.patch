@@ -1,0 +1,21 @@
+--- OpenBLAS-0.3.12/driver/others/memory.c~	2020-10-24 11:03:28.000000000 +0000
++++ OpenBLAS-0.3.12/driver/others/memory.c	2020-10-26 22:26:34.005002120 +0000
+@@ -273,6 +273,8 @@
+     }
+     ret = CPU_COUNT_S(size,cpusetp);
+     if (ret > 0 && ret < nums) nums = ret;
++    if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
++        nums = nums / hyperthreading_divider();
+     CPU_FREE(cpusetp);
+     return nums;
+   } else {
+@@ -282,6 +284,9 @@
+     }
+     ret = CPU_COUNT(&cpuset);
+     if (ret > 0 && ret < nums) nums = ret;
++    if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
++        nums = nums / hyperthreading_divider();
++
+     return nums;
+   }
+  #endif
