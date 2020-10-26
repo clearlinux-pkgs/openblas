@@ -1,14 +1,15 @@
 Name     : openblas
-Version  : 0.3.10
+Version  : 0.3.12
 Release  : 111
 URL      : http://www.openblas.net/
-Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.10.tar.gz
+Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.12.tar.gz
 Summary  : The OpenBLAS linear algebra package
 Group    : Development/Tools
 License  : BSD-3-Clause
 
 Patch1:  0001-Update-lto-related-for-v0.3.7.patch
 Patch10: 0001-ported-blas-ht-patch.patch 
+Patch11: 0001-ported-blas-ht-patch-2.patch 
 #Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
 Patch12: 0001-Remove-AVX2-macro-detection-as-not-supported.patch
 Patch13: 0001-Set-OMP-thread-count-to-best-utilize-HT-CPU.patch
@@ -44,8 +45,8 @@ OpenBLAS is an optimized linear algebra library.
 %setup -q -n OpenBLAS-%{version}
 %patch1 -p1
 %patch10 -p1
-#%patch11 -p1
-%patch12 -p1
+%patch11 -p1
+#%patch12 -p1
 %patch13 -p1
 #%patch14 -p1
 

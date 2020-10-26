@@ -26,18 +26,3 @@ index c48918c..69b0c5d 100644
      CPU_FREE(cpusetp);
      return nums;
    } else {
-@@ -1825,6 +1830,11 @@ int get_num_procs(void) {
-     if (ret > 0 && ret < nums) nums = ret;	
-     if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
-         nums = nums / hyperthreading_divider();
-+#if defined(USE_OPENMP)
-+    if (0 == openblas_omp_num_threads_env()) {
-+        omp_set_num_threads(nums);
-+    }
-+#endif
-     return nums;
-   }
-  #endif
--- 
-2.21.0
-

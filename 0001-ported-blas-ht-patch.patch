@@ -50,24 +50,3 @@ index f67cb01f..9327917e 100644
  #if !defined(__GLIBC_PREREQ)
    return nums;
  #else
-@@ -1794,6 +1814,8 @@ int get_num_procs(void) {
-     }
-     ret = CPU_COUNT_S(size,cpusetp);
-     if (ret > 0 && ret < nums) nums = ret;	
-+    if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
-+        nums = nums / hyperthreading_divider();
-     CPU_FREE(cpusetp);
-     return nums;
-   } else {
-@@ -1803,6 +1825,8 @@ int get_num_procs(void) {
-     }
-     ret = CPU_COUNT(&cpuset);
-     if (ret > 0 && ret < nums) nums = ret;	
-+    if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
-+        nums = nums / hyperthreading_divider();
-     return nums;
-   }
-  #endif
--- 
-2.21.0
-
