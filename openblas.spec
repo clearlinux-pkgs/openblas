@@ -76,8 +76,8 @@ pushd ..
 	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=128 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 
-	export CFLAGS="$CFLAGS -march=skylake-avx512  -mprefer-vector-width=512"
-	export FFLAGS="$FFLAGS -march=skylake-avx512  -mprefer-vector-width=512"
+	export CFLAGS="$CFLAGS -march=skylake-avx512  -mprefer-vector-width=512 -mtune=skylake-avx512"
+	export FFLAGS="$FFLAGS -march=skylake-avx512  -mprefer-vector-width=512 -mtune=skylake-avx512"
 	pushd openblas-avx512
 	# Claim cross compiling to skip tests if we don't have AVX512
 	# (AVX512VL so we run on SKX, but not KNL)
