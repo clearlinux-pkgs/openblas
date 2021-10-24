@@ -1,0 +1,16 @@
+Before an expensive cmpxchg in a loop... check the condition unlocked
+
+
+diff --git a/driver/others/blas_server_omp.c b/driver/others/blas_server_omp.c
+index a576127a..64582b19 100644
+--- a/driver/others/blas_server_omp.c
++++ b/driver/others/blas_server_omp.c
+@@ -390,7 +390,7 @@ int exec_blas(BLASLONG num, blas_queue_t *queue){
+     for(i=0; i < MAX_PARALLEL_NUMBER; i++) {
+ #ifdef HAVE_C11
+       _Bool inuse = false;
+-      if(atomic_compare_exchange_weak(&blas_buffer_inuse[i], &inuse, true)) {
++      if(blas_buffer_inuse[i] == false && atomic_compare_exchange_weak(&blas_buffer_inuse[i], &inuse, true)) {
+ #else
+       if(blas_buffer_inuse[i] == false) {
+         blas_buffer_inuse[i] = true;
