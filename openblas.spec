@@ -48,7 +48,7 @@ OpenBLAS is an optimized linear algebra library.
 %patch11 -p1
 #%patch12 -p1
 %patch13 -p1
-%patch14 -p1
+#%patch14 -p1
 
 %build
 export AR=gcc-ar
