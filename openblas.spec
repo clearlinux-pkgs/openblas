@@ -73,7 +73,7 @@ pushd ..
 	pushd openblas-avx2
 	# Claim cross compiling to skip tests if we don't have AVX2
 	grep -q '^flags .*avx2' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=128 BUILD_BFLOAT16=1 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=128 BUILD_BFLOAT16=1 MAX_PARALLEL_NUMBER=32 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 
 	export CFLAGS="$CFLAGS -march=skylake-avx512  -mprefer-vector-width=256 -mtune=skylake-avx512"
@@ -82,7 +82,7 @@ pushd ..
 	# Claim cross compiling to skip tests if we don't have AVX512
 	# (AVX512VL so we run on SKX, but not KNL)
 	grep -q '^flags .*avx512vl' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=256 BUILD_BFLOAT16=1 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=256 BUILD_BFLOAT16=1 MAX_PARALLEL_NUMBER=64 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 popd
 
