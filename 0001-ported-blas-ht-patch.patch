@@ -16,6 +16,18 @@ diff --git a/driver/others/memory.c b/driver/others/memory.c
 index f67cb01f..9327917e 100644
 --- a/driver/others/memory.c
 +++ b/driver/others/memory.c
+@@ -258,6 +258,11 @@
+   return nums;
+ #endif
+ 
++#if defined(linux)
++   nums = nums / hyperthreading_divider();
++#endif
++
++
+ #if !defined(__GLIBC_PREREQ)
+   return nums;
+ #else
 @@ -1737,6 +1737,22 @@ void goto_set_num_threads(int num_threads) {};
  #else
  
@@ -38,15 +50,4 @@ index f67cb01f..9327917e 100644
 +
  #ifndef NO_AFFINITY
  int get_num_procs(void);
- #else
-@@ -1761,6 +1777,10 @@ int get_num_procs(void) {
-   return nums;
- #endif
- 
-+#if defined(linux)
-+   nums = nums / hyperthreading_divider();
-+#endif
-+
- #if !defined(__GLIBC_PREREQ)
-   return nums;
  #else
