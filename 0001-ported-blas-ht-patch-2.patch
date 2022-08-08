@@ -16,6 +16,6 @@
 +    if (nums == sysconf(_SC_NPROCESSORS_CONF)) /* no mask, fall back to default HT policy */
 +        nums = nums / hyperthreading_divider();
 +
-     return nums;
+     return (nums > 0 ? nums :2);
    }
   #endif
