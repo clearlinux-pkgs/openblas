@@ -105,19 +105,19 @@ pushd ..
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	pushd openblas-avx2
-	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/haswell
-        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/haswell/libblas.so
-        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/haswell/libblas.so.3
-        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/haswell/liblapack.so
-        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/haswell/liblapack.so.3
+	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/glibc-hwcaps/x86-64-v3
+        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libblas.so
+        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libblas.so.3
+        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/liblapack.so
+        ln -sf libopenblas_haswellp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/liblapack.so.3
 	popd
 	export CFLAGS="$CFLAGS -march=skylake-avx512 "
 	pushd openblas-avx512
-	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/haswell/avx512_1
-        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/haswell/avx512_1/libblas.so
-        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/haswell/avx512_1/libblas.so.3
-        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/haswell/avx512_1/liblapack.so
-        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/haswell/avx512_1/liblapack.so.3
+	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/glibc-hwcaps/x86-64-v4
+        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libblas.so
+        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libblas.so.3
+        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/liblapack.so
+        ln -sf libopenblas_skylakexp-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/liblapack.so.3
 	popd
 popd
 
@@ -139,39 +139,39 @@ popd
 /usr/include/lapacke_utils.h
 /usr/include/openblas_config.h
 /usr/include/lapack.h
-/usr/lib64/haswell/libopenblas.so
-/usr/lib64/haswell/libopenblas.so.0
-/usr/lib64/haswell/libopenblas_haswellp-r%{version}.so
-%exclude /usr/lib64/haswell/cmake/openblas/OpenBLASConfig.cmake
-%exclude /usr/lib64/haswell/cmake/openblas/OpenBLASConfigVersion.cmake
-%exclude /usr/lib64/haswell/pkgconfig/openblas.pc
-/usr/lib64/haswell/avx512_1/libopenblas.so
-/usr/lib64/haswell/avx512_1/libopenblas.so.0
-/usr/lib64/haswell/avx512_1/libopenblas_skylakexp-r%{version}.so
-%exclude /usr/lib64/haswell/avx512_1/cmake/openblas/OpenBLASConfig.cmake
-%exclude /usr/lib64/haswell/avx512_1/cmake/openblas/OpenBLASConfigVersion.cmake
+/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas.so
+/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas.so.0
+/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_haswellp-r%{version}.so
+%exclude /usr/lib64/glibc-hwcaps/x86-64-v3/cmake/openblas/OpenBLASConfig.cmake
+%exclude /usr/lib64/glibc-hwcaps/x86-64-v3/cmake/openblas/OpenBLASConfigVersion.cmake
+%exclude /usr/lib64/glibc-hwcaps/x86-64-v3/pkgconfig/openblas.pc
+/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas.so
+/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas.so.0
+/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_skylakexp-r%{version}.so
+%exclude /usr/lib64/glibc-hwcaps/x86-64-v4/cmake/openblas/OpenBLASConfig.cmake
+%exclude /usr/lib64/glibc-hwcaps/x86-64-v4/cmake/openblas/OpenBLASConfigVersion.cmake
 /usr/lib64/libopenblas.so
 /usr/lib64/libopenblas.so.0
 /usr/lib64/libopenblas_nehalemp-r%{version}.so
-%exclude /usr/lib64/haswell/avx512_1/pkgconfig/openblas.pc
-/usr/lib64/haswell/avx512_1/libblas.so
-/usr/lib64/haswell/avx512_1/libblas.so.3
-/usr/lib64/haswell/avx512_1/liblapack.so
-/usr/lib64/haswell/avx512_1/liblapack.so.3
-/usr/lib64/haswell/libblas.so
-/usr/lib64/haswell/libblas.so.3
-/usr/lib64/haswell/liblapack.so
-/usr/lib64/haswell/liblapack.so.3
+%exclude /usr/lib64/glibc-hwcaps/x86-64-v4/pkgconfig/openblas.pc
+/usr/lib64/glibc-hwcaps/x86-64-v4/libblas.so
+/usr/lib64/glibc-hwcaps/x86-64-v4/libblas.so.3
+/usr/lib64/glibc-hwcaps/x86-64-v4/liblapack.so
+/usr/lib64/glibc-hwcaps/x86-64-v4/liblapack.so.3
+/usr/lib64/glibc-hwcaps/x86-64-v3/libblas.so
+/usr/lib64/glibc-hwcaps/x86-64-v3/libblas.so.3
+/usr/lib64/glibc-hwcaps/x86-64-v3/liblapack.so
+/usr/lib64/glibc-hwcaps/x86-64-v3/liblapack.so.3
 /usr/lib64/libblas.so
 /usr/lib64/libblas.so.3
 /usr/lib64/liblapack.so
 /usr/lib64/liblapack.so.3
 
 %files staticdev
-/usr/lib64/haswell/libopenblas.a
-/usr/lib64/haswell/libopenblas_haswellp-r%{version}.a
-/usr/lib64/haswell/avx512_1/libopenblas.a
-/usr/lib64/haswell/avx512_1/libopenblas_skylakexp-r%{version}.a
+/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas.a
+/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_haswellp-r%{version}.a
+/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas.a
+/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_skylakexp-r%{version}.a
 /usr/lib64/libopenblas.a
 /usr/lib64/libopenblas_nehalemp-r%{version}.a
 
