@@ -98,6 +98,8 @@ pushd ..
 
 	pushd openblas-noavx
 	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64
+        ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/libopenblas.so
+        ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/libopenblas.so.0
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/libblas.so
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/libblas.so.3
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/liblapack.so
