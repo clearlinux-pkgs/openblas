@@ -15,6 +15,11 @@ Patch12: 0001-Remove-AVX2-macro-detection-as-not-supported.patch
 Patch13: 0001-Set-OMP-thread-count-to-best-utilize-HT-CPU.patch
 Patch14: cmpxchg.patch
 
+
+%define debug_package %{nil}
+%define __strip /bin/true
+
+
 %package staticdev
 Summary: fiiles for static linking
 Group: Binaries
@@ -53,9 +58,9 @@ OpenBLAS is an optimized linear algebra library.
 %build
 export AR=gcc-ar
 export RANLIB=gcc-ranlib
-export CFLAGS="$CFLAGS  -fno-semantic-interposition -O3 "
-export FFLAGS="$CFLAGS -fno-semantic-interposition -O3 -fno-f2c "
-export CXXFLAGS="$CXXFLAGS -fno-semantic-interposition -O3 "
+export CFLAGS="$CFLAGS  -fno-semantic-interposition -O3 -g1 -gno-variable-location-views -gno-column-info -femit-struct-debug-baseonly -gz "
+export FFLAGS="$CFLAGS -fno-semantic-interposition -O3 -fno-f2c -g1 -gno-variable-location-views -gno-column-info -femit-struct-debug-baseonly -gz  "
+export CXXFLAGS="$CXXFLAGS -fno-semantic-interposition -O3 -g1 -gno-variable-location-views -gno-column-info -femit-struct-debug-baseonly -gz "
 
 sed -i -e "s/\-O2/\-O3/g" Makefile*
 
@@ -76,13 +81,13 @@ pushd ..
 	make TARGET=HASWELL F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=128 BUILD_BFLOAT16=1 MAX_PARALLEL_NUMBER=32 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 
-	export CFLAGS="$CFLAGS -march=skylake-avx512  -mprefer-vector-width=512 -mtune=skylake-avx512"
-	export FFLAGS="$FFLAGS -march=skylake-avx512  -mprefer-vector-width=512 -mtune=skylake-avx512"
+	export CFLAGS="$CFLAGS -march=skylake-avx512  -mprefer-vector-width=512 -mtune=sapphirerapids"
+	export FFLAGS="$FFLAGS -march=skylake-avx512  -mprefer-vector-width=512 -mtune=sapphirerapids"
 	pushd openblas-avx512
 	# Claim cross compiling to skip tests if we don't have AVX512
 	# (AVX512VL so we run on SKX, but not KNL)
 	grep -q '^flags .*avx512vl' /proc/cpuinfo 2>/dev/null || SKIPTESTS=CROSS=1
-	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=512 BUILD_BFLOAT16=1 MAX_PARALLEL_NUMBER=64 ${SKIPTESTS} %{?_smp_mflags}
+	make TARGET=SKYLAKEX F_COMPILER=GFORTRAN  SHARED=1 DYNAMIC_THREADS=1 USE_OPENMP=1 NO_AFFINITY=1  NUM_THREADS=512 BUILD_BFLOAT16=1 MAX_PARALLEL_NUMBER=128 ${SKIPTESTS} %{?_smp_mflags}
 	popd
 popd
 
