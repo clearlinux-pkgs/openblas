@@ -12,7 +12,7 @@ Patch10: 0001-ported-blas-ht-patch.patch
 Patch11: 0001-ported-blas-ht-patch-2.patch 
 #Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
 Patch12: 0001-Remove-AVX2-macro-detection-as-not-supported.patch
-Patch13: 0001-Set-OMP-thread-count-to-best-utilize-HT-CPU.patch
+#Patch13: 0001-Set-OMP-thread-count-to-best-utilize-HT-CPU.patch
 Patch14: cmpxchg.patch
 
 
@@ -52,7 +52,7 @@ OpenBLAS is an optimized linear algebra library.
 %patch10 -p1
 %patch11 -p1
 #%patch12 -p1
-%patch13 -p1
+#%patch13 -p1
 #%patch14 -p1
 
 %build
