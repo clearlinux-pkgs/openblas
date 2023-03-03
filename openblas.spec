@@ -1,6 +1,6 @@
 Version  : 0.3.21
 Name	 : openblas
-Release  : 135
+Release  : 136
 URL      : http://www.openblas.net/
 Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.21.tar.gz
 Summary  : The OpenBLAS linear algebra package
@@ -137,6 +137,11 @@ ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x8
 mv %{buildroot}/usr/lib64/libopenblas_nehalemp-r%{version}.a                          %{buildroot}/usr/lib64/libopenblas_generic-r%{version}.a
 mv %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_haswellp-r%{version}.a   %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_generic-r%{version}.a
 mv %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_skylakexp-r%{version}.a  %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_generic-r%{version}.a
+ln -sf libopenblas.a %{buildroot}/usr/lib64/libopenblas_generic-r%{version}.a
+ln -sf libopenblas.a %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_generic-r%{version}.a
+ln -sf libopenblas.a %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_generic-r%{version}.a
+
+
 
 
 #check
