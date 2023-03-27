@@ -138,8 +138,8 @@ mv %{buildroot}/usr/lib64/libopenblas_nehalemp-r%{version}.a                    
 mv %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_haswellp-r%{version}.a   %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_generic-r%{version}.a
 mv %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_skylakexp-r%{version}.a  %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_generic-r%{version}.a
 ln -sf libopenblas.a %{buildroot}/usr/lib64/libopenblas_generic-r%{version}.a
-ln -sf libopenblas.a %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_generic-r%{version}.a
-ln -sf libopenblas.a %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_generic-r%{version}.a
+rm -rf %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/*.a
+rm -rf %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/*.a
 
 
 
@@ -191,10 +191,6 @@ ln -sf libopenblas.a %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_g
 /usr/lib64/liblapack.so.3
 
 %files staticdev
-/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas.a
-/usr/lib64/glibc-hwcaps/x86-64-v3/libopenblas_generic-r%{version}.a
-/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas.a
-/usr/lib64/glibc-hwcaps/x86-64-v4/libopenblas_generic-r%{version}.a
 /usr/lib64/libopenblas.a
 /usr/lib64/libopenblas_generic-r%{version}.a
 
