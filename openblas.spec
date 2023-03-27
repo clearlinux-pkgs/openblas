@@ -102,7 +102,7 @@ export CXXFLAGS="$CXXFLAGS -flto -ffunction-sections -fno-semantic-interposition
 pushd ..
 
 	pushd openblas-noavx
-	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64
+	make install TARGET=NEHALEM DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/libopenblas.so
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/libopenblas.so.0
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/libblas.so
@@ -112,7 +112,7 @@ pushd ..
 	popd
 	export CFLAGS="$CFLAGS -march=haswell "
 	pushd openblas-avx2
-	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/glibc-hwcaps/x86-64-v3
+	make install TARGET=HASWELL DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/glibc-hwcaps/x86-64-v3
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libblas.so
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/libblas.so.3
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v3/liblapack.so
@@ -120,7 +120,7 @@ pushd ..
 	popd
 	export CFLAGS="$CFLAGS -march=skylake-avx512 "
 	pushd openblas-avx512
-	make install DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/glibc-hwcaps/x86-64-v4
+	make install TARGET=SKYLAKEX DESTDIR=%{buildroot} PREFIX=/usr OPENBLAS_LIBRARY_DIR=/usr/lib64/glibc-hwcaps/x86-64-v4
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libblas.so
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/libblas.so.3
         ln -sf libopenblas_generic-r%{version}.so %{buildroot}/usr/lib64/glibc-hwcaps/x86-64-v4/liblapack.so
