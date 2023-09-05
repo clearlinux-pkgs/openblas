@@ -1,19 +1,19 @@
-Version  : 0.3.23
+Version  : 0.3.24
 Name	 : openblas
 Release  : 139
 URL      : http://www.openblas.net/
-Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.23.tar.gz
+Source0  : https://github.com/xianyi/OpenBLAS/archive/v0.3.24.tar.gz
 Summary  : The OpenBLAS linear algebra package
 Group    : Development/Tools
 License  : BSD-3-Clause
 
 Patch1:  0001-Update-lto-related-for-v0.3.7.patch
-Patch10: 0001-ported-blas-ht-patch.patch 
-Patch11: 0001-ported-blas-ht-patch-2.patch 
+#Patch10: 0001-ported-blas-ht-patch.patch 
+#Patch11: 0001-ported-blas-ht-patch-2.patch 
 #Patch11: 0001-Add-sgemm-direct-code-for-avx2.patch
-Patch12: 0001-Remove-AVX2-macro-detection-as-not-supported.patch
+#Patch12: 0001-Remove-AVX2-macro-detection-as-not-supported.patch
 #Patch13: 0001-Set-OMP-thread-count-to-best-utilize-HT-CPU.patch
-Patch14: cmpxchg.patch
+#Patch14: cmpxchg.patch
 
 
 %define debug_package %{nil}
