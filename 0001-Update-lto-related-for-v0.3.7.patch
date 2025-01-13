@@ -35,7 +35,7 @@ index 6addbda..9b36a79 100644
  ifeq ($(OSNAME), Linux)
 -EXTRALIB	+= -lm
 +EXTRALIB	+= -lm -lgfortran
- NO_EXPRECISION = 1
+ #NO_EXPRECISION = 1
  endif
  
 @@ -1185,11 +1185,11 @@ FCOMMON_OPT += -g
